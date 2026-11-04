@@ -272,7 +272,23 @@ router.post('/google', async (req, res) => {
           googleId = payload.sub;
         }
       } catch (err) {
-        console.warn('Google ID token verification notice:', err.message);
+        // If not an ID token (JWT), check if it's an OAuth2 access token
+        try {
+          const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+            headers: { Authorization: `Bearer ${googleToken}` },
+          });
+          if (userinfoRes.ok) {
+            const gUser = await userinfoRes.json();
+            if (gUser.email) {
+              email = gUser.email;
+              name = gUser.name || gUser.given_name || email.split('@')[0];
+              avatarUrl = gUser.picture;
+              googleId = gUser.sub;
+            }
+          }
+        } catch {
+          // Ignore fallback fetch error
+        }
       }
     }
 
@@ -589,7 +605,6 @@ router.post('/forgot-password', async (req, res) => {
             : `Verification code generated for ${user.email}.`)
         : `Verification code generated for ${user.phone}.`,
       emailSent: emailStatus.sent,
-      devCode: resetCode,
     });
   } catch (error) {
     console.error('Forgot password error:', error);
@@ -624,7 +639,6 @@ router.post('/send-verification-code', async (req, res) => {
 
     res.json({
       success: true,
-      code,
       emailSent: emailStatus.sent,
       message: emailStatus.sent
         ? `Verification code dispatched to ${email}.`

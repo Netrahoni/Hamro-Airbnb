@@ -19,7 +19,7 @@ interface AuthContextType {
   adminGmail: string;
   isBackendConnected: boolean;
   login: (identifier: string, password: string, role?: UserRole) => Promise<{ success: boolean; error?: string }>;
-  loginWithGoogle: (profile: { name: string; email: string; avatarUrl?: string }) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: (profile: { name: string; email: string; avatarUrl?: string; googleId?: string }, token?: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   register: (input: RegisterInput) => Promise<{ success: boolean; error?: string }>;
   registerHost: (input: HostRegisterInput) => Promise<{ success: boolean; error?: string }>;
   adminLogin: (input: AdminLoginInput) => Promise<{ success: boolean; error?: string }>;
@@ -173,14 +173,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Google OAuth-Style Login for Guests & Admin
-  const loginWithGoogle = async (googleProfile: { name: string; email: string; avatarUrl?: string }): Promise<{ success: boolean; error?: string }> => {
-    const res = await api.googleAuth(googleProfile);
+  const loginWithGoogle = async (
+    googleProfile: { name: string; email: string; avatarUrl?: string; googleId?: string },
+    token?: string
+  ): Promise<{ success: boolean; error?: string; user?: User }> => {
+    const res = await api.googleAuth(googleProfile, token);
     if (res.success && res.data?.user) {
       setCurrentUser(res.data.user);
-      return { success: true };
+      return { success: true, user: res.data.user };
     }
 
-    // Local fallback if backend is still establishing initial MongoDB connection
+    if (res.error && !res.error.includes('Failed to fetch') && !res.error.includes('Network')) {
+      return { success: false, error: res.error };
+    }
+
+    // Local fallback if backend is offline or starting
     const emailNorm = googleProfile.email.trim().toLowerCase();
     const isAdmin = Boolean(adminGmail && emailNorm === adminGmail.trim().toLowerCase());
 
@@ -201,7 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     setCurrentUser(fallbackUser);
     setUsers((prev) => [fallbackUser, ...prev.filter((u) => u.email !== emailNorm)]);
-    return { success: true };
+    return { success: true, user: fallbackUser };
   };
 
   // Standard Guest / General Registration

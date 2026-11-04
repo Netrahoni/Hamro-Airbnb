@@ -10,7 +10,6 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
-  Sparkles,
   Smartphone,
   CheckCircle2,
   AlertCircle,
@@ -21,10 +20,25 @@ import {
   FileCheck,
   Clock,
   Key,
-  Server,
-  Mail,
 } from 'lucide-react';
 import Badge from '../components/Badge';
+
+function decodeJwt(token: string): Record<string, unknown> | null {
+  try {
+    const base64Url = token.split('.')[1];
+    if (!base64Url) return null;
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
 
 function GoogleIcon() {
   return (
@@ -56,7 +70,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     forgotPassword,
     resetPassword,
     adminGmail,
-    isBackendConnected,
   } = useAuth();
 
   const [activeRole, setActiveRole] = useState<UserRole>(roleParam || 'guest');
@@ -70,11 +83,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Google OAuth Personal Account Input
-  const [showGoogleModal, setShowGoogleModal] = useState(false);
-  const [googleEmailInput, setGoogleEmailInput] = useState('');
-  const [googleNameInput, setGoogleNameInput] = useState('');
-
   // Guest Registration States
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
@@ -82,7 +90,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [guestPassword, setGuestPassword] = useState('');
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpCode, setOtpCode] = useState('');
-  const [expectedSignupOtp, setExpectedSignupOtp] = useState('');
   const [signupOtpMsg, setSignupOtpMsg] = useState('');
 
   // Host Registration Multi-Step Wizard States
@@ -125,7 +132,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [forgotError, setForgotError] = useState<string | null>(null);
   const [forgotSuccessMsg, setForgotSuccessMsg] = useState<string | null>(null);
-  const [forgotDevCode, setForgotDevCode] = useState<string | null>(null);
+
 
   // Countdown timer for 2FA TOTP code
   useEffect(() => {
@@ -163,66 +170,167 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     });
   }, []);
 
-  // Initialize Google Identity Services
+  // Real Google OAuth: Process Access Token (OAuth2 popup or redirect)
+  const processGoogleAccessToken = async (accessToken: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        throw new Error('Failed to retrieve user profile from Google.');
+      }
+      const profile = await res.json();
+      const email = (profile.email as string) || '';
+      const name = (profile.name as string) || (profile.given_name as string) || email.split('@')[0] || 'Traveler';
+      const avatarUrl = (profile.picture as string) || undefined;
+      const googleId = (profile.sub as string) || undefined;
+
+      if (!email) {
+        throw new Error('Google did not return an email address.');
+      }
+
+      const authRes = await loginWithGoogle(
+        { name, email, avatarUrl, googleId },
+        accessToken
+      );
+
+      if (authRes.success) {
+        const isDesignatedAdmin = adminGmail && email.trim().toLowerCase() === adminGmail.trim().toLowerCase();
+        handleRedirect(isDesignatedAdmin ? 'admin' : (authRes.user?.role || 'guest'));
+      } else {
+        setError(authRes.error || 'Google authentication failed.');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error during Google sign-in.';
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Real Google OAuth: Process ID Token (One-Tap / Credential JWT)
+  const processGoogleIdToken = async (idToken: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const payload = decodeJwt(idToken);
+      const email = (payload?.email as string) || '';
+      const name = (payload?.name as string) || (payload?.given_name as string) || email.split('@')[0] || 'Traveler';
+      const avatarUrl = (payload?.picture as string) || undefined;
+      const googleId = (payload?.sub as string) || undefined;
+
+      if (!email) {
+        throw new Error('Google did not provide an email address.');
+      }
+
+      const res = await loginWithGoogle(
+        { name, email, avatarUrl, googleId },
+        idToken
+      );
+
+      if (res.success) {
+        const isDesignatedAdmin = adminGmail && email.trim().toLowerCase() === adminGmail.trim().toLowerCase();
+        handleRedirect(isDesignatedAdmin ? 'admin' : (res.user?.role || 'guest'));
+      } else {
+        setError(res.error || 'Google sign-in failed.');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Google verification failed';
+      setError(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Redirect to official Google accounts sign-in endpoint
+  const redirectToGoogleOAuth = () => {
+    if (!googleClientId) {
+      setError('Google Client ID is loading. Please wait a few seconds and try again.');
+      return;
+    }
+    const redirectUri = window.location.origin + '/auth';
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
+      googleClientId
+    )}&redirect_uri=${encodeURIComponent(
+      redirectUri
+    )}&response_type=token&scope=${encodeURIComponent(
+      'openid email profile'
+    )}&prompt=select_account`;
+    window.location.href = authUrl;
+  };
+
+  // Handle return from Google OAuth redirect (hash token)
   useEffect(() => {
-    const google = (window as unknown as { google?: { accounts?: { id?: { initialize: (config: unknown) => void; renderButton: (el: HTMLElement, opts: unknown) => void } } } }).google;
+    if (window.location.hash && window.location.hash.includes('access_token')) {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const accessToken = hashParams.get('access_token');
+      if (accessToken) {
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+        processGoogleAccessToken(accessToken);
+      }
+    }
+  }, [googleClientId]);
+
+  // Initialize Google Identity Services (One Tap & ID Token)
+  useEffect(() => {
+    const google = (window as unknown as { google?: { accounts?: { id?: { initialize: (config: unknown) => void } } } }).google;
     if (googleClientId && google?.accounts?.id && activeRole === 'guest') {
       try {
         google.accounts.id.initialize({
           client_id: googleClientId,
-          callback: async (response: { credential?: string }) => {
+          callback: (response: { credential?: string }) => {
             if (response?.credential) {
-              setIsLoading(true);
-              const res = await api.googleAuth({ name: '', email: '' }, response.credential);
-              setIsLoading(false);
-              if (res.success && res.data?.user) {
-                const userRole = res.data.user.role;
-                handleRedirect(userRole === 'admin' ? 'admin' : userRole === 'owner' ? 'owner' : 'guest');
-              } else {
-                setError(res.error || 'Google authentication failed.');
-              }
+              processGoogleIdToken(response.credential);
             }
           },
         });
-        const container = document.getElementById('google-native-signin-btn');
-        if (container) {
-          google.accounts.id.renderButton(container, {
-            theme: 'outline',
-            size: 'large',
-            width: 360,
-            text: 'continue_with',
-          });
-        }
       } catch (err) {
         console.warn('Google Identity initialization notice:', err);
       }
     }
   }, [googleClientId, activeRole]);
 
-  // Google OAuth Login
-  const handleGoogleSubmit = async (e?: FormEvent) => {
-    if (e) e.preventDefault();
-    if (!googleEmailInput.trim()) {
-      setError('Please enter your personal Gmail address.');
+  // Click handler for "Continue with Google"
+  const handleGoogleAuthClick = () => {
+    setError(null);
+    if (!googleClientId) {
+      setError('Connecting to Google services... Please try again in a moment.');
       return;
     }
-    setIsLoading(true);
-    setShowGoogleModal(false);
 
-    const name = googleNameInput.trim() || googleEmailInput.split('@')[0];
-    const res = await loginWithGoogle({
-      name,
-      email: googleEmailInput.trim(),
-      avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=17372f&color=fff`,
-    });
-    setIsLoading(false);
+    const google = (window as unknown as { google?: { accounts?: { oauth2?: { initTokenClient: (cfg: unknown) => { requestAccessToken: (opts?: unknown) => void } } } } }).google;
 
-    if (res.success) {
-      const isDesignatedAdmin = adminGmail && googleEmailInput.trim().toLowerCase() === adminGmail.trim().toLowerCase();
-      handleRedirect(isDesignatedAdmin ? 'admin' : 'guest');
-    } else {
-      setError(res.error || 'Google authentication failed.');
+    if (google?.accounts?.oauth2) {
+      try {
+        const client = google.accounts.oauth2.initTokenClient({
+          client_id: googleClientId,
+          scope: 'openid email profile',
+          callback: async (response: { access_token?: string; error?: string }) => {
+            if (response?.error) {
+              if (response.error === 'popup_closed_by_user') return;
+              // Fallback to full page redirect if popup is blocked or closed
+              redirectToGoogleOAuth();
+              return;
+            }
+            if (response?.access_token) {
+              await processGoogleAccessToken(response.access_token);
+            }
+          },
+          error_callback: () => {
+            redirectToGoogleOAuth();
+          },
+        });
+        client.requestAccessToken({ prompt: 'select_account' });
+        return;
+      } catch (err) {
+        console.warn('Google popup error, redirecting directly:', err);
+      }
     }
+
+    // Direct redirect to Google OAuth
+    redirectToGoogleOAuth();
   };
 
   // Standard Login Submit
@@ -263,18 +371,14 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     });
     setIsLoading(false);
 
-    if (res.success && res.data?.code) {
-      setExpectedSignupOtp(res.data.code);
-      setOtpCode(res.data.code);
+    if (res.success) {
       setSignupOtpMsg(
-        res.data.emailSent
-          ? `✓ 6-Digit code dispatched to ${guestEmail}. Check your inbox or spam folder.`
-          : `Verification code generated for ${guestEmail}.`
+        res.data?.emailSent
+          ? `✓ A 6-digit code was sent to ${guestEmail}. Check your inbox or spam folder.`
+          : `Verification code sent. Check your inbox.`
       );
       setShowOtpModal(true);
     } else {
-      setExpectedSignupOtp('123456');
-      setOtpCode('123456');
       setShowOtpModal(true);
     }
   };
@@ -282,11 +386,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const handleGuestSignupComplete = async () => {
     if (otpCode.length < 6) {
       setError('Please enter the 6-digit verification code.');
-      return;
-    }
-
-    if (expectedSignupOtp && otpCode.trim() !== expectedSignupOtp.trim() && otpCode.trim() !== '123456') {
-      setError('Invalid verification code. Please check the code sent to your Gmail.');
       return;
     }
 
@@ -352,10 +451,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     setIsLoading(false);
 
     if (res.success) {
-      setForgotDevCode(res.devCode || null);
-      if (res.devCode) {
-        setForgotCode(res.devCode);
-      }
       setForgotSuccessMsg(res.message || 'Verification code sent to your email/mobile.');
       setForgotStep('reset');
     } else {
@@ -436,40 +531,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   return (
     <div className="auth-page container">
       {/* Backend & Admin Configuration Notice Banner */}
-      <div style={{ width: 'min(100%, 540px)', marginBottom: '16px' }}>
-        <div
-          style={{
-            background: '#ffffff',
-            border: '1px solid #e3e7df',
-            borderRadius: '12px',
-            padding: '12px 18px',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.03)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Server size={15} color="#2b6e4f" />
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#17372f' }}>
-              {isBackendConnected ? 'Backend API Active (Port 5000)' : 'Connecting to Backend...'}
-            </span>
-          </div>
-
-          {adminGmail ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', color: '#65748a' }}>Primary Admin Gmail:</span>
-              <Badge tone="blue">{adminGmail}</Badge>
-            </div>
-          ) : (
-            <span style={{ fontSize: '11px', color: '#8995a5' }}>
-              Set <code>ADMIN_GMAIL</code> in <code>server/.env</code> to designate main admin
-            </span>
-          )}
-        </div>
-      </div>
 
       <div
         className="auth-card"
@@ -619,19 +680,15 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
             </p>
 
             {/* Google Authentication */}
-            <div id="google-native-signin-btn" style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px' }} />
-
             <button
               type="button"
               className="google-auth-btn"
-              onClick={() => {
-                setShowGoogleModal(true);
-                setError(null);
-              }}
+              onClick={handleGoogleAuthClick}
+              disabled={isLoading}
               style={{ marginBottom: '16px' }}
             >
               <GoogleIcon />
-              <span>Continue with Google</span>
+              <span>{isLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
             </button>
 
             <div className="auth-or-divider">
@@ -1297,27 +1354,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                 : 'Enter your 6-digit TOTP token generated by your Authenticator app.'}
             </p>
 
-            {adminGmail && (
-              <div
-                style={{
-                  padding: '10px 14px',
-                  background: '#f0f5f2',
-                  border: '1px solid #c9dcd2',
-                  borderRadius: '8px',
-                  marginBottom: '16px',
-                  fontSize: '12px',
-                  color: '#17372f',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                }}
-              >
-                <Sparkles size={16} color="#c69c55" />
-                <span>
-                  Configured Admin Account: <strong>{adminGmail}</strong>
-                </span>
-              </div>
-            )}
 
             {adminStep === 'credentials' ? (
               /* ADMIN STEP 1: STAFF ID / GMAIL & MASTER PASSWORD */
@@ -1328,7 +1364,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                     type="text"
                     value={adminStaffId}
                     onChange={(e) => setAdminStaffId(e.target.value)}
-                    placeholder={adminGmail || 'yourname@gmail.com or Staff ID'}
+                    placeholder="yourname@gmail.com or Staff ID"
                     required
                   />
                 </label>
@@ -1436,120 +1472,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
         )}
       </div>
 
-      {/* Google OAuth Modal for Personal Gmail Sign-in */}
-      {showGoogleModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(16, 35, 29, 0.65)',
-            backdropFilter: 'blur(4px)',
-            display: 'grid',
-            placeItems: 'center',
-            zIndex: 1000,
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: '16px',
-              padding: '24px 28px',
-              maxWidth: '440px',
-              width: '100%',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-              border: '1px solid #eaede7',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '14px' }}>
-              <GoogleIcon />
-              <div style={{ fontWeight: 600, fontSize: '16px', color: '#202124' }}>
-                Sign in with Google
-              </div>
-            </div>
-            <p style={{ fontSize: '12px', color: '#5f6368', margin: '0 0 16px' }}>
-              Enter your personal Gmail to authenticate with <strong>NepalStay</strong>.
-            </p>
-
-            {adminGmail && (
-              <div
-                style={{
-                  padding: '10px 12px',
-                  background: '#f0f5f2',
-                  border: '1px solid #bed6c8',
-                  borderRadius: '10px',
-                  marginBottom: '14px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
-                onClick={() => {
-                  setGoogleEmailInput(adminGmail);
-                  setGoogleNameInput('Platform Superadmin');
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '11px', color: '#17372f', fontWeight: 700 }}>
-                    👑 Primary Admin Gmail Configured
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#2b6e4f', fontWeight: 600 }}>
-                    {adminGmail}
-                  </div>
-                </div>
-                <Badge tone="blue">Click to autofill</Badge>
-              </div>
-            )}
-
-            <form onSubmit={handleGoogleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '16px' }}>
-              <label className="form-label">
-                <span>Your Personal Gmail Address</span>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type="email"
-                    value={googleEmailInput}
-                    onChange={(e) => setGoogleEmailInput(e.target.value)}
-                    placeholder="yourname@gmail.com"
-                    required
-                    autoFocus
-                  />
-                  <Mail size={16} color="#8995a5" style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-                </div>
-              </label>
-
-              <label className="form-label">
-                <span>Display Name</span>
-                <input
-                  type="text"
-                  value={googleNameInput}
-                  onChange={(e) => setGoogleNameInput(e.target.value)}
-                  placeholder="Your Full Name"
-                />
-              </label>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-                <button
-                  type="button"
-                  className="button button-outline"
-                  style={{ flex: 1 }}
-                  onClick={() => setShowGoogleModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="button button-dark"
-                  style={{ flex: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                  disabled={isLoading}
-                >
-                  <GoogleIcon />
-                  <span>{isLoading ? 'Verifying...' : 'Sign In with Google'}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* SMS OTP Modal for Mobile Registration */}
       {showOtpModal && (
@@ -1626,31 +1548,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                 style={{ textAlign: 'center', fontSize: '20px', letterSpacing: '6px', fontWeight: 700 }}
               />
             </label>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '8px 12px',
-                background: '#f8f9f6',
-                borderRadius: '8px',
-                marginBottom: '20px',
-                fontSize: '11px',
-              }}
-            >
-              <span style={{ color: '#53647b' }}>
-                Verification Code: <strong>{expectedSignupOtp || '123456'}</strong>
-              </span>
-              <button
-                type="button"
-                className="plain-action"
-                style={{ fontWeight: 700, color: '#17372f' }}
-                onClick={() => setOtpCode(expectedSignupOtp || '123456')}
-              >
-                Auto-fill
-              </button>
-            </div>
 
             <div style={{ display: 'flex', gap: '10px' }}>
               <button
@@ -1807,30 +1704,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
             ) : (
               /* STEP 2: Enter Code and New Password */
               <form onSubmit={handleResetPasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {forgotDevCode && (
-                  <div
-                    style={{
-                      padding: '8px 12px',
-                      background: '#f8faf9',
-                      borderRadius: '8px',
-                      fontSize: '11px',
-                      border: '1px solid #e2e8f0',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                    }}
-                  >
-                    <span>Verification Code: <strong>{forgotDevCode}</strong></span>
-                    <button
-                      type="button"
-                      className="plain-action"
-                      style={{ fontWeight: 700, color: '#17372f' }}
-                      onClick={() => setForgotCode(forgotDevCode)}
-                    >
-                      Auto-fill
-                    </button>
-                  </div>
-                )}
 
                 <label className="form-label">
                   <span>6-Digit Verification Code</span>
