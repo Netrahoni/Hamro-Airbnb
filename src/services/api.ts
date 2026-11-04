@@ -1,0 +1,213 @@
+import type {
+  AdminLoginInput,
+  HostRegisterInput,
+  KycStatus,
+  RegisterInput,
+  User,
+  UserRole,
+  UserStatus,
+} from '../types/auth';
+
+const TOKEN_KEY = 'ns_jwt_token';
+
+export function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setStoredToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearStoredToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+async function request<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<{ success: boolean; data?: T; error?: string }> {
+  try {
+    const token = getStoredToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(endpoint, {
+      ...options,
+      headers,
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || `Request failed with status ${response.status}`,
+      };
+    }
+
+    return {
+      success: true,
+      data,
+    };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Network request failed';
+    return {
+      success: false,
+      error: errorMsg,
+    };
+  }
+}
+
+export const api = {
+  // Public Configuration & Health
+  async getHealth() {
+    return request<{ status: string; adminGmailConfigured: boolean; adminGmail: string }>('/api/health');
+  },
+
+  async getConfig() {
+    return request<{ adminGmailConfigured: boolean; adminGmail: string; googleClientId: string }>('/api/auth/config');
+  },
+
+  // Auth Operations
+  async login(identifier: string, password: string, role?: UserRole) {
+    const res = await request<{ user: User; token: string }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, password, role }),
+    });
+    if (res.success && res.data?.token) {
+      setStoredToken(res.data.token);
+    }
+    return res;
+  },
+
+  async googleAuth(profile: { name: string; email: string; avatarUrl?: string; googleId?: string }, token?: string) {
+    const res = await request<{ user: User; token: string }>('/api/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ profile, token }),
+    });
+    if (res.success && res.data?.token) {
+      setStoredToken(res.data.token);
+    }
+    return res;
+  },
+
+  async registerGuest(input: RegisterInput) {
+    const res = await request<{ user: User; token: string }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    if (res.success && res.data?.token) {
+      setStoredToken(res.data.token);
+    }
+    return res;
+  },
+
+  async registerHost(input: HostRegisterInput) {
+    const payload = {
+      fullName: input.fullName,
+      email: input.email,
+      phone: input.phone,
+      password: input.password,
+      role: 'owner',
+      propertyName: input.propertyName,
+      propertyType: input.propertyType,
+      city: input.city,
+      propertyCity: input.city,
+      province: input.province,
+      district: input.district,
+      wardNumber: input.wardNumber,
+      streetAddress: input.streetAddress,
+      citizenshipNumber: input.citizenshipNumber,
+      panNumber: input.panNumber,
+      bankName: input.bankName,
+      accountName: input.accountName,
+      accountNumber: input.accountNumber,
+      branch: input.branch,
+    };
+
+    const res = await request<{ user: User; token: string }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.success && res.data?.token) {
+      setStoredToken(res.data.token);
+    }
+    return res;
+  },
+
+  async adminLogin(input: AdminLoginInput) {
+    const res = await request<{ user: User; token: string }>('/api/auth/admin/login', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+    if (res.success && res.data?.token) {
+      setStoredToken(res.data.token);
+    }
+    return res;
+  },
+
+  async getMe() {
+    return request<{ user: User }>('/api/auth/me');
+  },
+
+  async updateProfile(updates: Partial<User>) {
+    return request<{ user: User }>('/api/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async forgotPassword(identifier: string) {
+    return request<{ message: string; devCode?: string; emailSent?: boolean }>('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ identifier }),
+    });
+  },
+
+  async sendVerificationCode(data: { email?: string; phone?: string; fullName?: string }) {
+    return request<{ code: string; emailSent: boolean; message: string }>('/api/auth/send-verification-code', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async resetPassword(identifier: string, code: string, newPassword: string) {
+    return request<{ message: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ identifier, code, newPassword }),
+    });
+  },
+
+  async logout() {
+    clearStoredToken();
+    return request<{ message: string }>('/api/auth/logout', {
+      method: 'POST',
+    });
+  },
+
+  // Admin User Management
+  async getAllUsers() {
+    return request<{ users: User[]; stats: Record<string, number> }>('/api/users');
+  },
+
+  async updateUserStatus(userId: string, status: UserStatus) {
+    return request<{ user: User }>(`/api/users/${userId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  async updateUserKyc(userId: string, kycStatus: KycStatus) {
+    return request<{ user: User }>(`/api/users/${userId}/kyc`, {
+      method: 'PATCH',
+      body: JSON.stringify({ kycStatus }),
+    });
+  },
+};
+
