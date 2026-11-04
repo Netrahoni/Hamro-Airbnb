@@ -160,6 +160,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   };
 
   const [googleClientId, setGoogleClientId] = useState('');
+  const [isGoogleReady, setIsGoogleReady] = useState(false);
 
   // Fetch Google Client ID from backend
   useEffect(() => {
@@ -170,7 +171,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     });
   }, []);
 
-  // Real Google OAuth: Process Access Token (OAuth2 popup or redirect)
+  // Real Google OAuth: Process Access Token (OAuth2 popup)
   const processGoogleAccessToken = async (accessToken: string) => {
     setIsLoading(true);
     setError(null);
@@ -244,59 +245,64 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     }
   };
 
-  // Redirect to official Google accounts sign-in endpoint
-  const redirectToGoogleOAuth = () => {
-    if (!googleClientId) {
-      setError('Google Client ID is loading. Please wait a few seconds and try again.');
-      return;
-    }
-    const redirectUri = window.location.origin + '/auth';
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(
-      googleClientId
-    )}&redirect_uri=${encodeURIComponent(
-      redirectUri
-    )}&response_type=token&scope=${encodeURIComponent(
-      'openid email profile'
-    )}&prompt=select_account`;
-    window.location.href = authUrl;
-  };
-
-  // Handle return from Google OAuth redirect (hash token)
+  // Render official Google Identity Services button (No redirect, No redirect_uri_mismatch!)
   useEffect(() => {
-    if (window.location.hash && window.location.hash.includes('access_token')) {
-      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-      const accessToken = hashParams.get('access_token');
-      if (accessToken) {
-        window.history.replaceState(null, '', window.location.pathname + window.location.search);
-        processGoogleAccessToken(accessToken);
-      }
-    }
-  }, [googleClientId]);
+    let interval: ReturnType<typeof setInterval>;
 
-  // Initialize Google Identity Services (One Tap & ID Token)
-  useEffect(() => {
-    const google = (window as unknown as { google?: { accounts?: { id?: { initialize: (config: unknown) => void } } } }).google;
-    if (googleClientId && google?.accounts?.id && activeRole === 'guest') {
-      try {
-        google.accounts.id.initialize({
-          client_id: googleClientId,
-          callback: (response: { credential?: string }) => {
-            if (response?.credential) {
-              processGoogleIdToken(response.credential);
-            }
-          },
-        });
-      } catch (err) {
-        console.warn('Google Identity initialization notice:', err);
-      }
-    }
-  }, [googleClientId, activeRole]);
+    const renderGoogleBtn = () => {
+      const google = (window as unknown as { google?: { accounts?: { id?: { initialize: (config: unknown) => void; renderButton: (el: HTMLElement, opts: unknown) => void } } } }).google;
+      const container = document.getElementById('google-native-btn-container');
 
-  // Click handler for "Continue with Google"
+      if (googleClientId && google?.accounts?.id && container && activeRole === 'guest') {
+        try {
+          google.accounts.id.initialize({
+            client_id: googleClientId,
+            callback: (response: { credential?: string }) => {
+              if (response?.credential) {
+                processGoogleIdToken(response.credential);
+              }
+            },
+            auto_select: false,
+          });
+
+          container.innerHTML = '';
+          google.accounts.id.renderButton(container, {
+            type: 'standard',
+            theme: 'outline',
+            size: 'large',
+            text: 'continue_with',
+            shape: 'rectangular',
+            logo_alignment: 'left',
+            width: Math.min(container.offsetWidth || 380, 420),
+          });
+
+          setIsGoogleReady(true);
+          return true;
+        } catch (err) {
+          console.warn('Google Identity initialization notice:', err);
+        }
+      }
+      return false;
+    };
+
+    if (!renderGoogleBtn()) {
+      interval = setInterval(() => {
+        if (renderGoogleBtn()) {
+          clearInterval(interval);
+        }
+      }, 250);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [googleClientId, activeRole, isSignup]);
+
+  // Click handler for fallback button
   const handleGoogleAuthClick = () => {
     setError(null);
     if (!googleClientId) {
-      setError('Connecting to Google services... Please try again in a moment.');
+      setError('Connecting to Google services... Please wait a moment and try again.');
       return;
     }
 
@@ -310,27 +316,24 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
           callback: async (response: { access_token?: string; error?: string }) => {
             if (response?.error) {
               if (response.error === 'popup_closed_by_user') return;
-              // Fallback to full page redirect if popup is blocked or closed
-              redirectToGoogleOAuth();
+              setError(`Google Sign-In notice: ${response.error}. Ensure your current URL is in Google Cloud Console's Authorized JavaScript Origins.`);
               return;
             }
             if (response?.access_token) {
               await processGoogleAccessToken(response.access_token);
             }
           },
-          error_callback: () => {
-            redirectToGoogleOAuth();
-          },
         });
         client.requestAccessToken({ prompt: 'select_account' });
         return;
-      } catch (err) {
-        console.warn('Google popup error, redirecting directly:', err);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Google OAuth error';
+        setError(msg);
+        return;
       }
     }
 
-    // Direct redirect to Google OAuth
-    redirectToGoogleOAuth();
+    setError('Google Sign-In is initializing. Please wait a moment.');
   };
 
   // Standard Login Submit
@@ -680,16 +683,29 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
             </p>
 
             {/* Google Authentication */}
-            <button
-              type="button"
-              className="google-auth-btn"
-              onClick={handleGoogleAuthClick}
-              disabled={isLoading}
-              style={{ marginBottom: '16px' }}
+            <div
+              id="google-native-btn-container"
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                width: '100%',
+                marginBottom: '16px',
+                minHeight: '44px',
+              }}
             >
-              <GoogleIcon />
-              <span>{isLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
-            </button>
+              {!isGoogleReady && (
+                <button
+                  type="button"
+                  className="google-auth-btn"
+                  onClick={handleGoogleAuthClick}
+                  disabled={isLoading}
+                  style={{ width: '100%', marginBottom: 0 }}
+                >
+                  <GoogleIcon />
+                  <span>{isLoading ? 'Connecting with Google...' : 'Continue with Google'}</span>
+                </button>
+              )}
+            </div>
 
             <div className="auth-or-divider">
               <span>OR USE PERSONAL GMAIL / EMAIL / PHONE</span>
