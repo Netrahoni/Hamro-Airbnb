@@ -28,6 +28,7 @@ function cleanPropertyInput(body = {}) {
   }
   for (const field of ['images', 'amenities', 'houseRules']) {
     if (data[field] !== undefined && (!Array.isArray(data[field]) || data[field].length > (field === 'images' ? 20 : 50) || data[field].some(v => typeof v !== 'string' || v.length > 1000))) throw new Error(`Invalid ${field} list.`);
+    if (field === 'images' && data[field] !== undefined && data[field].some(url => { try { return new URL(url).protocol !== 'https:'; } catch { return true; } })) throw new Error('Property image URLs must use HTTPS.');
   }
   if (data.location !== undefined) {
     const loc = data.location;
