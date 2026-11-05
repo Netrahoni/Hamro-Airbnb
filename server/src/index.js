@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load server/.env first, then fallback to root .env
+// Load server/.env first, then fall back to the repository root .env.
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -18,60 +18,65 @@ import propertyRoutes from './routes/properties.js';
 import bookingRoutes from './routes/bookings.js';
 
 const app = express();
-const PORT = process.env.PORT || 5000;\nconst allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',').map((v) => v.trim()).filter(Boolean);\nif (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('Startup blocked: configure JWT_SECRET with at least 32 random characters.');\nif (!process.env.MONGODB_URI) throw new Error('Startup blocked: configure MONGODB_URI.');
+const PORT = process.env.PORT || 5000;
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-// Connect to MongoDB
-connectDB();
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error('Startup blocked: configure JWT_SECRET with at least 32 random characters.');
+}
+if (!process.env.MONGODB_URI) {
+  throw new Error('Startup blocked: configure MONGODB_URI.');
+}
 
-// Middleware
-app.use(
-  cors({
-    origin(origin, callback) {\n      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);\n      return callback(new Error('Origin not allowed by CORS.'));\n    },
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Origin not allowed by CORS.'));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// Health Check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'NepalStay Backend API',
-    adminGmailConfigured: Boolean(process.env.ADMIN_GMAIL),
-    adminGmail: process.env.ADMIN_GMAIL || '(not configured yet)',
     time: new Date().toISOString(),
   });
 });
 
-// Route Mounts
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/properties', propertyRoutes);
 app.use('/api/bookings', bookingRoutes);
 
-// 404 handler for API
 app.use('/api/*', (req, res) => {
-  res.status(404).json({ success: false, error: 'API route not found' });
+  res.status(404).json({ success: false, error: 'API route not found.' });
 });
 
-// Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({
+  console.error('API error:', err);
+  const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 500 ? err.status : 500;
+  res.status(status).json({
     success: false,
-    error: err.message || 'Internal server error',
+    error: status < 500 ? err.message : 'Internal server error.',
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`===============================================`);
-  console.log(`🏔️ NepalStay Backend API listening on port ${PORT}`);
-  console.log(`📡 URL: http://localhost:${PORT}`);
-  if (process.env.ADMIN_GMAIL) {
-    console.log(`👑 Designated Platform Admin Gmail: ${process.env.ADMIN_GMAIL}`);
-  } else {
-    console.log(`ℹ️ No ADMIN_GMAIL set yet in server/.env.`);
+async function startServer() {
+  try {
+    await connectDB();
+    app.listen(PORT, () => {
+      console.log(`NepalStay API listening on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error('Backend startup failed:', error.message);
+    process.exit(1);
   }
-  console.log(`===============================================`);
-});
+}
+
+startServer();
