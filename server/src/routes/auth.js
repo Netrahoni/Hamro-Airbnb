@@ -408,9 +408,18 @@ router.put('/profile', requireAuth, async (req, res) => {
       avatar,
     } = req.body;
 
-    if (fullName) user.fullName = fullName.trim();
-    if (phone) user.phone = phone.trim();
-    if (avatar !== undefined) user.avatar = avatar;
+    if (fullName !== undefined) {
+      if (typeof fullName !== 'string' || fullName.trim().length < 2 || fullName.trim().length > 100) return res.status(400).json({ success: false, error: 'Name must be between 2 and 100 characters.' });
+      user.fullName = fullName.trim();
+    }
+    if (phone !== undefined) {
+      if (typeof phone !== 'string' || normalizePhone(phone).length < 10) return res.status(400).json({ success: false, error: 'Enter a valid phone number.' });
+      user.phone = phone.trim();
+    }
+    if (avatar !== undefined) {
+      if (typeof avatar !== 'string' || avatar.length > 2000 || (avatar && !avatar.startsWith('https://'))) return res.status(400).json({ success: false, error: 'Avatar must be a valid HTTPS URL.' });
+      user.avatar = avatar;
+    }
 
 
     await user.save();
