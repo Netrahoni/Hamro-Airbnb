@@ -155,10 +155,12 @@ type ListingFormState = {
   district: string;
   streetAddress: string;
   description: string;
+  imageUrls: string;
+  amenities: string;
 };
 const emptyListingForm: ListingFormState = {
   title: '', tagline: '', propertyType: 'Homestay', pricePerNight: '',
-  city: '', province: '', district: '', streetAddress: '', description: '',
+  city: '', province: '', district: '', streetAddress: '', description: '', imageUrls: '', amenities: '',
 };
 
 function listingToForm(property: HostProperty): ListingFormState {
@@ -169,6 +171,8 @@ function listingToForm(property: HostProperty): ListingFormState {
     city: property.location?.city || '', province: property.location?.province || '',
     district: property.location?.district || '', streetAddress: property.location?.streetAddress || '',
     description: property.description || '',
+    imageUrls: (property.images || []).join('\n'),
+    amenities: (property.amenities || []).join('\n'),
   };
 }
 
@@ -215,6 +219,8 @@ export function OwnerPage() {
         district: form.district.trim(), streetAddress: form.streetAddress.trim(),
       },
       description: form.description.trim(),
+      images: form.imageUrls.split('\n').map(url => url.trim()).filter(Boolean),
+      amenities: form.amenities.split('\n').map(item => item.trim()).filter(Boolean),
     };
     const result = editing
       ? await api.updateHostProperty(editing.id || editing._id || '', payload)
@@ -271,7 +277,7 @@ export function OwnerPage() {
             <label className="form-label">District<input value={form.district} onChange={e=>updateField('district',e.target.value)} placeholder="Kaski"/></label>
             <label className="form-label host-form-wide">Street address<input value={form.streetAddress} onChange={e=>updateField('streetAddress',e.target.value)} placeholder="Ward, street or nearby landmark"/></label>
             <label className="form-label host-form-wide">Short tagline<input maxLength={180} value={form.tagline} onChange={e=>updateField('tagline',e.target.value)} placeholder="A peaceful stay overlooking the valley"/></label>
-            <label className="form-label host-form-wide">Property description<textarea required maxLength={5000} rows={4} value={form.description} onChange={e=>updateField('description',e.target.value)} placeholder="Describe the accommodation, facilities and guest experience."/></label>
+            <label className="form-label host-form-wide">Property description<textarea required maxLength={5000} rows={4} value={form.description} onChange={e=>updateField('description',e.target.value)} placeholder="Describe the accommodation, facilities and guest experience."/></label>\n            <label className="form-label host-form-wide">Image URLs (one per line)<textarea rows={3} value={form.imageUrls} onChange={e=>updateField('imageUrls',e.target.value)} placeholder="https://.../property-photo.jpg"/></label>\n            <label className="form-label host-form-wide">Amenities (one per line)<textarea rows={3} value={form.amenities} onChange={e=>updateField('amenities',e.target.value)} placeholder="Wi-Fi\nBreakfast\nParking"/></label>
           </div>
           {actionError && <p className="host-form-error">{actionError}</p>}
           <div className="host-form-actions"><button type="button" className="button button-outline" onClick={closeForm}>Cancel</button><button type="submit" className="button button-dark" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create draft'}</button></div>
@@ -297,7 +303,7 @@ export function OwnerPage() {
           : visibleProperties.length === 0 ? <div className="host-empty-state"><h3>No properties yet</h3><p>Create your first listing. It will be saved as a draft until you submit it for review.</p><button className="button button-dark" onClick={openCreate}><Plus size={15}/> Create your first property</button></div>
           : <div className="host-property-list">{visibleProperties.map(property=>(
             <article className="host-property-row" key={property.id || property._id}>
-              <div className="host-property-thumb"><span>{property.propertyType}</span></div>
+              <div className="host-property-thumb">{property.images?.[0] ? <img src={property.images[0]} alt={property.title}/> : <span>{property.propertyType}</span>}</div>
               <div className="host-property-main"><h4>{property.title}</h4><p>{property.location?.city}{property.location?.district ? `, ${property.location.district}` : ''} · NPR {Number(property.pricePerNight).toLocaleString()} / night</p><span className={`host-status host-status-${property.status}`}>{property.status.replace('_',' ')}</span></div>
               <div className="host-property-actions">
                 <button className="button button-outline" onClick={()=>openEdit(property)}><Pencil size={14}/> Edit</button>
