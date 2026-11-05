@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
@@ -14,12 +14,18 @@ import {
   Wallet,
   UserCheck,
   UserX,
+  Plus,
+  Pencil,
+  Eye,
+  EyeOff,
+  Trash2,
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import Badge from '../components/Badge';
 import SectionHeading from '../components/SectionHeading';
 import { useAuth } from '../context/AuthContext';
 import type { UserStatus } from '../types/auth';
+import { api, type HostProperty, type HostPropertyInput } from '../services/api';
 
 export { default as AuthPage } from './AuthPage';
 
@@ -139,18 +145,175 @@ function WizardPage({ path }: { path: string }) {
   </div>}{active===3&&<><label className="form-label">Nightly rate (NPR)<input type="number" placeholder="e.g. 5500"/></label><label className="form-label">Available units<input type="number" placeholder="e.g. 6"/></label></>}{active===4&&<label className="form-label">Cash on Arrival (COD) hold cutoff time<select><option>6:00 PM</option><option>5:00 PM</option><option>7:00 PM</option><option>Guaranteed all-night hold</option></select></label>}<div className="wizard-actions"><Link to={active===0?'/owner/dashboard':steps[active-1][0]} className="button button-outline">Back</Link>{active<4?<Link to={steps[active+1][0]} className="button button-dark">Save & continue</Link>:<button className="button button-dark" onClick={handleSubmit}>Submit for review</button>}</div></>}</div></div>;
 }
 
+type ListingFormState = {
+  title: string;
+  tagline: string;
+  propertyType: string;
+  pricePerNight: string;
+  city: string;
+  province: string;
+  district: string;
+  streetAddress: string;
+  description: string;
+};
+const emptyListingForm: ListingFormState = {
+  title: '', tagline: '', propertyType: 'Homestay', pricePerNight: '',
+  city: '', province: '', district: '', streetAddress: '', description: '',
+};
+
+function listingToForm(property: HostProperty): ListingFormState {
+  return {
+    title: property.title || '', tagline: property.tagline || '',
+    propertyType: property.propertyType || 'Homestay',
+    pricePerNight: String(property.pricePerNight || ''),
+    city: property.location?.city || '', province: property.location?.province || '',
+    district: property.location?.district || '', streetAddress: property.location?.streetAddress || '',
+    description: property.description || '',
+  };
+}
+
 export function OwnerPage() {
   const { pathname } = useLocation();
   const { currentUser } = useAuth();
-  if (pathname.startsWith('/owner/register/')) return <WizardPage path={pathname}/>;
-  const config = ownerConfig[pathname] ?? ownerConfig['/owner/dashboard'];
+  const [properties, setProperties] = useState<HostProperty[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const [editing, setEditing] = useState<HostProperty | null>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState<ListingFormState>(emptyListingForm);
 
-  // Personalize title if on dashboard and owner has a property name
-  const title = pathname === '/owner/dashboard' && currentUser?.propertyName
-    ? `Good morning, ${currentUser.propertyName}.`
-    : config.title;
+  const loadProperties = async () => {
+    setLoading(true);
+    setLoadError('');
+    const result = await api.getHostProperties();
+    if (result.success && result.data?.properties) setProperties(result.data.properties);
+    else setLoadError(result.error || 'Could not load your property listings.');
+    setLoading(false);
+  };
 
-  return <div className="portal-page"><SectionHeading eyebrow={config.eyebrow} title={title} description={config.subtitle} action={<button className="button button-outline"><Download size={15}/> Export</button>}/><div className="stats-grid">{config.stats.map((stat,index)=><StatCard key={stat[0]} title={stat[0]} value={stat[1]} note={stat[2]} index={index}/>)}</div><div className="portal-two-col"><div className="panel"><div className="panel-heading"><div><h3>{pathname==='/owner/dashboard'?'Recent activity':pathname==='/owner/reservations'?'Reservation list':pathname==='/owner/calendar'?'Room inventory':pathname==='/owner/listings'?'Your properties':'Recent invoices'}</h3><p className="muted">Updated moments ago · Live operational records</p></div><button className="plain-action"><Filter size={15}/> Filter</button></div><GenericTable rows={config.rows} admin={false}/></div><ModelPanel admin={false}/></div>{pathname==='/owner/dashboard'&&<div className="quick-actions"><Link to="/owner/reservations"><ClipboardCheck/> Manage arrivals <span>→</span></Link><Link to="/owner/calendar"><CalendarDays/> Update availability <span>→</span></Link><Link to="/owner/finances"><Wallet/> View settlement <span>→</span></Link></div>}</div>;
+  useEffect(() => { void loadProperties(); }, []);
+
+  const openCreate = () => { setEditing(null); setForm(emptyListingForm); setActionError(''); setShowForm(true); };
+  const openEdit = (property: HostProperty) => { setEditing(property); setForm(listingToForm(property)); setActionError(''); setShowForm(true); };
+  const closeForm = () => { setShowForm(false); setEditing(null); setForm(emptyListingForm); };
+
+  const updateField = (field: keyof ListingFormState, value: string) => setForm(previous => ({ ...previous, [field]: value }));
+
+  const saveListing = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaving(true);
+    setActionError('');
+    const payload: HostPropertyInput = {
+      title: form.title.trim(),
+      tagline: form.tagline.trim(),
+      propertyType: form.propertyType,
+      pricePerNight: Number(form.pricePerNight),
+      location: {
+        city: form.city.trim(), province: form.province.trim(),
+        district: form.district.trim(), streetAddress: form.streetAddress.trim(),
+      },
+      description: form.description.trim(),
+    };
+    const result = editing
+      ? await api.updateHostProperty(editing.id || editing._id || '', payload)
+      : await api.createHostProperty(payload);
+    setSaving(false);
+    if (!result.success) { setActionError(result.error || 'Could not save listing.'); return; }
+    closeForm();
+    await loadProperties();
+  };
+
+  const changeStatus = async (property: HostProperty, status: string) => {
+    setActionError('');
+    const result = await api.updateHostPropertyStatus(property.id || property._id || '', status);
+    if (!result.success) { setActionError(result.error || 'Could not update listing status.'); return; }
+    await loadProperties();
+  };
+
+  const removeListing = async (property: HostProperty) => {
+    if (!window.confirm('Remove this listing from public search? You can contact support if it needs to be restored.')) return;
+    const result = await api.removeHostProperty(property.id || property._id || '');
+    if (!result.success) { setActionError(result.error || 'Could not remove listing.'); return; }
+    await loadProperties();
+  };
+
+  const activeCount = properties.filter(item => item.status === 'active').length;
+  const reviewCount = properties.filter(item => item.status === 'pending_approval').length;
+  const draftCount = properties.filter(item => item.status === 'draft').length;
+  const visibleProperties = properties.filter(item => item.status !== 'unlisted');
+  const isListings = pathname === '/owner/listings';
+
+  return (
+    <div className="portal-page host-workspace">
+      <SectionHeading
+        eyebrow={isListings ? 'PROPERTY MANAGEMENT' : 'HOST OVERVIEW'}
+        title={pathname === '/owner/dashboard' && currentUser?.propertyName ? `Welcome, ${currentUser.propertyName}.` : isListings ? 'Your property listings' : 'Host dashboard'}
+        description={isListings ? 'Create, update and manage the properties you host on NepalStay.' : 'A live overview of your accommodation listings and their review status.'}
+        action={<button className="button button-dark" onClick={openCreate}><Plus size={15}/> Add property</button>}
+      />
+
+      {actionError && <div className="host-alert host-alert-error" role="alert">{actionError}</div>}
+
+      {showForm && (
+        <form className="host-listing-form" onSubmit={saveListing}>
+          <div className="host-form-heading">
+            <div><span className="eyebrow">{editing ? 'EDIT LISTING' : 'NEW LISTING · SAVE AS DRAFT'}</span><h2>{editing ? 'Update property details' : 'Create a property listing'}</h2></div>
+            <button type="button" className="plain-action" onClick={closeForm}>Close</button>
+          </div>
+          <div className="host-form-grid">
+            <label className="form-label">Property name<input required minLength={5} maxLength={120} value={form.title} onChange={e=>updateField('title',e.target.value)} placeholder="e.g. Himalayan View Homestay"/></label>
+            <label className="form-label">Property type<select value={form.propertyType} onChange={e=>updateField('propertyType',e.target.value)}><option>Homestay</option><option>Boutique Hotel</option><option>Eco Lodge</option><option>Resort</option><option>Traditional House</option></select></label>
+            <label className="form-label">Nightly price (NPR)<input required type="number" min="1" max="10000000" value={form.pricePerNight} onChange={e=>updateField('pricePerNight',e.target.value)} placeholder="4500"/></label>
+            <label className="form-label">City<input required value={form.city} onChange={e=>updateField('city',e.target.value)} placeholder="Pokhara"/></label>
+            <label className="form-label">Province<input value={form.province} onChange={e=>updateField('province',e.target.value)} placeholder="Gandaki Province"/></label>
+            <label className="form-label">District<input value={form.district} onChange={e=>updateField('district',e.target.value)} placeholder="Kaski"/></label>
+            <label className="form-label host-form-wide">Street address<input value={form.streetAddress} onChange={e=>updateField('streetAddress',e.target.value)} placeholder="Ward, street or nearby landmark"/></label>
+            <label className="form-label host-form-wide">Short tagline<input maxLength={180} value={form.tagline} onChange={e=>updateField('tagline',e.target.value)} placeholder="A peaceful stay overlooking the valley"/></label>
+            <label className="form-label host-form-wide">Property description<textarea required maxLength={5000} rows={4} value={form.description} onChange={e=>updateField('description',e.target.value)} placeholder="Describe the accommodation, facilities and guest experience."/></label>
+          </div>
+          {actionError && <p className="host-form-error">{actionError}</p>}
+          <div className="host-form-actions"><button type="button" className="button button-outline" onClick={closeForm}>Cancel</button><button type="submit" className="button button-dark" disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create draft'}</button></div>
+        </form>
+      )}
+
+      {!isListings && (
+        <div className="stats-grid host-stats">
+          <StatCard title="Total listings" value={String(properties.length)} note="Your properties" index={0}/>
+          <StatCard title="Published" value={String(activeCount)} note="Visible in guest search" index={1}/>
+          <StatCard title="Under review" value={String(reviewCount)} note="Awaiting admin approval" index={2}/>
+          <StatCard title="Drafts" value={String(draftCount)} note="Not visible to guests" index={3}/>
+        </div>
+      )}
+
+      <div className="panel host-listings-panel">
+        <div className="panel-heading">
+          <div><h3>{isListings ? 'Manage listings' : 'Your properties'}</h3><p className="muted">Listing data is loaded from your authenticated host account.</p></div>
+          <Link className="plain-action" to="/owner/listings">View all listings →</Link>
+        </div>
+        {loading ? <div className="host-empty-state">Loading your property listings…</div>
+          : loadError ? <div className="host-empty-state"><p>{loadError}</p><button className="button button-outline" onClick={()=>void loadProperties()}>Try again</button></div>
+          : visibleProperties.length === 0 ? <div className="host-empty-state"><h3>No properties yet</h3><p>Create your first listing. It will be saved as a draft until you submit it for review.</p><button className="button button-dark" onClick={openCreate}><Plus size={15}/> Create your first property</button></div>
+          : <div className="host-property-list">{visibleProperties.map(property=>(
+            <article className="host-property-row" key={property.id || property._id}>
+              <div className="host-property-thumb"><span>{property.propertyType}</span></div>
+              <div className="host-property-main"><h4>{property.title}</h4><p>{property.location?.city}{property.location?.district ? `, ${property.location.district}` : ''} · NPR {Number(property.pricePerNight).toLocaleString()} / night</p><span className={`host-status host-status-${property.status}`}>{property.status.replace('_',' ')}</span></div>
+              <div className="host-property-actions">
+                <button className="button button-outline" onClick={()=>openEdit(property)}><Pencil size={14}/> Edit</button>
+                {property.status === 'draft' || property.status === 'paused' || property.status === 'unlisted'
+                  ? <button className="button button-dark" onClick={()=>void changeStatus(property,'pending_approval')}><Eye size={14}/> Submit for review</button>
+                  : property.status === 'active'
+                    ? <button className="button button-outline" onClick={()=>void changeStatus(property,'paused')}><EyeOff size={14}/> Pause</button>
+                    : <span className="host-review-note">Awaiting review</span>}
+                <button className="host-remove-button" onClick={()=>void removeListing(property)} aria-label={`Remove ${property.title}`}><Trash2 size={15}/></button>
+              </div>
+            </article>
+          ))}</div>}
+      </div>
+      <p className="host-workspace-note">Guest reservations, occupancy and earnings will become live when the booking engine is implemented in the next phase. No demo booking or revenue figures are shown here.</p>
+    </div>
+  );
 }
 
 export function AdminPage() {
