@@ -1,5 +1,5 @@
 import express from 'express';
-import { randomInt, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomInt, randomBytes, createHash, timingSafeEqual, createHmac } from 'node:crypto';
 import { User } from '../models/User.js';
 import { VerificationCode } from '../models/VerificationCode.js';
 import { requireAuth, generateToken } from '../middleware/auth.js';
@@ -7,6 +7,46 @@ import { OAuth2Client } from 'google-auth-library';
 import { sendPasswordResetEmail } from '../services/email.js';
 
 const router = express.Router();
+
+function decodeBase32Secret(secret) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const normalized = String(secret || '').replace(/=+$/g, '').replace(/\\s+/g, '').toUpperCase();
+  let bits = 0;
+  let value = 0;
+  const bytes = [];
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) return Buffer.alloc(0);
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function verifyAdminTotp(code, secret) {
+  if (!/^\\d{6}$/.test(String(code || '')) || !secret) return false;
+  const key = decodeBase32Secret(secret);
+  if (!key.length) return false;
+  const counter = Math.floor(Date.now() / 30000);
+  for (let window = -1; window <= 1; window += 1) {
+    const time = Buffer.alloc(8);
+    time.writeBigUInt64BE(BigInt(counter + window));
+    const digest = createHmac('sha1', key).update(time).digest();
+    const offset = digest[digest.length - 1] & 0x0f;
+    const binary = ((digest[offset] & 0x7f) << 24) |
+      ((digest[offset + 1] & 0xff) << 16) |
+      ((digest[offset + 2] & 0xff) << 8) |
+      (digest[offset + 3] & 0xff);
+    const expected = String(binary % 1000000).padStart(6, '0');
+    if (timingSafeEqual(Buffer.from(String(code)), Buffer.from(expected))) return true;
+  }
+  return false;
+}
+
 
 function normalizePhone(str = '') {
   const digits = str.replace(/\D/g, '');
@@ -303,8 +343,44 @@ router.post('/google', async (req, res) => {
  * POST /api/auth/admin/login
  * Secure Administrator login with Staff ID or Admin Gmail + Password + 2FA TOTP code
  */
-router.post('/admin/login', (req, res) => {
-  return res.status(503).json({ success: false, error: 'Administrator login is disabled until server-side TOTP verification is configured. Admin roles must be assigned through a trusted administrative process.' });
+router.post('/admin/login', async (req, res) => {
+  try {
+    const { staffIdOrEmail, password, totpCode } = req.body;
+    if (typeof staffIdOrEmail !== 'string' || typeof password !== 'string' || !staffIdOrEmail.trim() || !password) {
+      return res.status(400).json({ success: false, error: 'Administrator email and password are required.' });
+    }
+    if (!process.env.ADMIN_TOTP_SECRET) {
+      return res.status(503).json({ success: false, error: 'Administrator TOTP is not configured on the server.' });
+    }
+    const identifier = staffIdOrEmail.trim().toLowerCase();
+    const user = await User.findOne({ $or: [{ email: identifier }, { phone: identifier }] });
+    if (!user || user.role !== 'admin') return res.status(403).json({ success: false, error: 'Administrator credentials are invalid.' });
+    if (user.status !== 'active') return res.status(403).json({ success: false, error: 'Administrator account is unavailable.' });
+    if (user.lockUntil && user.lockUntil > new Date()) return res.status(429).json({ success: false, error: 'Too many failed attempts. Try again in 15 minutes.' });
+
+    const passwordMatches = await user.comparePassword(password);
+    const totpMatches = passwordMatches && verifyAdminTotp(totpCode, process.env.ADMIN_TOTP_SECRET);
+    if (!passwordMatches || !totpMatches) {
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      if (user.failedLoginAttempts >= 5) {
+        user.failedLoginAttempts = 0;
+        user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
+      }
+      await user.save();
+      return res.status(401).json({ success: false, error: 'Administrator credentials or authenticator code are invalid.' });
+    }
+
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+    user.lastLogin = new Date();
+    user.lastIp = req.ip || '';
+    await user.save();
+    const token = generateToken(user);
+    return res.json({ success: true, message: 'Administrator authentication successful.', token, user: user.toJSON() });
+  } catch (error) {
+    console.error('Admin login error:', error);
+    return res.status(500).json({ success: false, error: 'Unable to authenticate administrator.' });
+  }
 });
 
 /**
