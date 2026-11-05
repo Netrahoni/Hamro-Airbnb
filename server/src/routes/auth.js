@@ -55,9 +55,9 @@ router.post('/register', async (req, res) => {
     }
 
     if (typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, error: 'Password must be between 10 and 128 characters.' });
-    const cleanEmail = email ? String(email).trim().toLowerCase() : '';
-    const cleanPhone = phone ? String(phone).trim() : '';
-    if (cleanEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'Enter a valid email address.' });
+    const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
+    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'Enter a valid email address.' });
     if (cleanPhone && normalizePhone(cleanPhone).length < 10) return res.status(400).json({ success: false, error: 'Enter a valid phone number.' });
 
     // Check if user already exists
@@ -135,7 +135,7 @@ router.post('/login', async (req, res) => {
   try {
     const { identifier, password, role: expectedRole } = req.body;
 
-    if (!identifier || !password) {
+    if (typeof identifier !== 'string' || typeof password !== 'string' || !identifier.trim() || !password) {
       return res.status(400).json({
         success: false,
         error: 'Please provide both identifier (email/phone) and password.',
@@ -438,7 +438,7 @@ router.post('/reset-password', async (req, res) => {
   try {
     const { identifier, code, newPassword } = req.body;
 
-    if (!identifier || !code || !newPassword) {
+    if (typeof identifier !== 'string' || typeof code !== 'string' || typeof newPassword !== 'string' || !identifier.trim() || !code.trim() || !newPassword) {
       return res.status(400).json({
         success: false,
         error: 'Identifier, 6-digit reset code, and new password are required.',
