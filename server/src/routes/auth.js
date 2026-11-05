@@ -176,9 +176,16 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Verify password
+    // Enforce a short account lockout after repeated incorrect passwords.
+    if (user.lockUntil && user.lockUntil > new Date()) return res.status(429).json({ success: false, error: 'Too many failed attempts. Try again in 15 minutes.' });
     const isMatch = await user.comparePassword(password);
     if (!isMatch) {
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      if (user.failedLoginAttempts >= 5) {
+        user.failedLoginAttempts = 0;
+        user.lockUntil = new Date(Date.now() + 15 * 60 * 1000);
+      }
+      await user.save();
       return res.status(401).json({
         success: false,
         error: 'Incorrect password. Please verify your credentials and try again.',
@@ -192,6 +199,8 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
     user.lastLogin = new Date();
     user.lastIp = req.ip || '';
     await user.save();
