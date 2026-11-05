@@ -125,6 +125,7 @@ const userSchema = new mongoose.Schema(
     },
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date, default: null },
+    lastTotpCounter: { type: Number, default: -1 },
     lastLogin: {
       type: Date,
       default: Date.now,
@@ -179,6 +180,7 @@ userSchema.methods.toJSON = function () {
   delete obj.lastIp;
   delete obj.failedLoginAttempts;
   delete obj.lockUntil;
+  delete obj.lastTotpCounter;
   obj.id = obj._id.toString();
   if (!obj.propertyCity && obj.city) {
     obj.propertyCity = obj.city;
