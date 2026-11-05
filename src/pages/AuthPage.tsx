@@ -265,7 +265,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
             auto_select: false,
           });
 
-          container.innerHTML = '';
+          // Container is always empty from React's side — safe to let GIS render into it
           google.accounts.id.renderButton(container, {
             type: 'standard',
             theme: 'outline',
@@ -682,30 +682,32 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                 : 'Welcome back. Access your upcoming stays, saved wishlists and bookings.'}
             </p>
 
-            {/* Google Authentication */}
+            {/* Google Authentication — official GIS button is injected here by Google's SDK.
+                IMPORTANT: React must NEVER render children inside this div.
+                Google's renderButton() calls innerHTML='' which breaks React's vdom if there are children. */}
             <div
               id="google-native-btn-container"
               style={{
-                display: 'flex',
+                display: isGoogleReady ? 'flex' : 'none',
                 justifyContent: 'center',
                 width: '100%',
                 marginBottom: '16px',
-                minHeight: '44px',
               }}
-            >
-              {!isGoogleReady && (
-                <button
-                  type="button"
-                  className="google-auth-btn"
-                  onClick={handleGoogleAuthClick}
-                  disabled={isLoading}
-                  style={{ width: '100%', marginBottom: 0 }}
-                >
-                  <GoogleIcon />
-                  <span>{isLoading ? 'Connecting with Google...' : 'Continue with Google'}</span>
-                </button>
-              )}
-            </div>
+            />
+
+            {/* Fallback button shown BEFORE Google SDK finishes loading — it is a sibling, NOT inside the GIS container */}
+            {!isGoogleReady && (
+              <button
+                type="button"
+                className="google-auth-btn"
+                onClick={handleGoogleAuthClick}
+                disabled={isLoading}
+                style={{ marginBottom: '16px' }}
+              >
+                <GoogleIcon />
+                <span>{isLoading ? 'Connecting with Google...' : 'Continue with Google'}</span>
+              </button>
+            )}
 
             <div className="auth-or-divider">
               <span>OR USE PERSONAL GMAIL / EMAIL / PHONE</span>
