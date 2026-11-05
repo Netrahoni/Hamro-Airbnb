@@ -96,7 +96,7 @@ export const api = {
   },
 
   async getConfig() {
-    return request<{ adminGmailConfigured: boolean; adminGmail: string; googleClientId: string }>('/api/auth/config');
+    return request<{ adminGmailConfigured: boolean; googleClientId: string }>('/api/auth/config');
   },
 
   // Auth Operations
