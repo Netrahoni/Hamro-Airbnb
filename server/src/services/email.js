@@ -36,7 +36,8 @@ function createTransporter() {
 /**
  * Send Password Reset Verification Email
  */
-export async function sendPasswordResetEmail({ to, code, name, purpose = 'password_reset' }) {\n  const isSignup = purpose === 'signup';
+export async function sendPasswordResetEmail({ to, code, name, purpose = 'password_reset' }) {
+  const isSignup = purpose === 'signup';
   const recipientName = name || 'Traveler';
   const senderEmail = process.env.EMAIL_USER || process.env.ADMIN_GMAIL || 'nepalstay.ai@gmail.com';
 
