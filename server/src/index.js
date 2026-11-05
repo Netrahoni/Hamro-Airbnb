@@ -18,7 +18,7 @@ import propertyRoutes from './routes/properties.js';
 import bookingRoutes from './routes/bookings.js';
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5000;\nconst allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173').split(',').map((v) => v.trim()).filter(Boolean);\nif (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) throw new Error('Startup blocked: configure JWT_SECRET with at least 32 random characters.');\nif (!process.env.MONGODB_URI) throw new Error('Startup blocked: configure MONGODB_URI.');
 
 // Connect to MongoDB
 connectDB();
@@ -26,12 +26,12 @@ connectDB();
 // Middleware
 app.use(
   cors({
-    origin: true,
+    origin(origin, callback) {\n      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);\n      return callback(new Error('Origin not allowed by CORS.'));\n    },
     credentials: true,
   })
 );
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Health Check
 app.get('/api/health', (req, res) => {
