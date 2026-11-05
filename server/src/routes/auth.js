@@ -93,7 +93,7 @@ router.post('/register', async (req, res) => {
 
     const newUser = new User({
       fullName: fullName.trim(),
-      email: cleanEmail || undefined,
+      email: cleanEmail ||     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'A valid, verified email address is required.' });,
       phone: cleanPhone || undefined,
       password,
       role: finalRole,
@@ -165,7 +165,7 @@ router.post('/login', async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        error: 'No account registered with this email or mobile number.',
+        error: 'Invalid email/phone or password.',
       });
     }
 
@@ -229,7 +229,7 @@ router.post('/login', async (req, res) => {
 router.post('/google', async (req, res) => {
   try {
     const { token: googleToken } = req.body;
-    if (!googleToken || !process.env.GOOGLE_CLIENT_ID) return res.status(400).json({ success: false, error: 'A valid Google ID token is required.' });
+    if (typeof googleToken !== 'string' || !googleToken || !process.env.GOOGLE_CLIENT_ID) return res.status(400).json({ success: false, error: 'A valid Google ID token is required.' });
     const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
     const ticket = await client.verifyIdToken({ idToken: googleToken, audience: process.env.GOOGLE_CLIENT_ID });
     const payload = ticket.getPayload();
@@ -358,7 +358,7 @@ router.put('/profile', requireAuth, async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   try {
     const { identifier } = req.body;
-    if (!identifier) {
+    if (typeof identifier !== 'string' || !identifier.trim()) {
       return res.status(400).json({
         success: false,
         error: 'Please enter your registered email address or mobile phone number.',
