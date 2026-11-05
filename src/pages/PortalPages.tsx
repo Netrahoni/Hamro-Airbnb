@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import {
   CalendarDays,
   CheckCircle2,
@@ -201,7 +201,7 @@ export function OwnerPage() {
 
   const updateField = (field: keyof ListingFormState, value: string) => setForm(previous => ({ ...previous, [field]: value }));
 
-  const saveListing = async (event: React.FormEvent<HTMLFormElement>) => {
+  const saveListing = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true);
     setActionError('');
