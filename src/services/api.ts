@@ -10,6 +10,10 @@ import type {
 
 const TOKEN_KEY = 'ns_jwt_token';
 
+// In production (Vercel), VITE_API_URL points to the deployed backend.
+// In dev, it's empty so the Vite proxy handles /api → localhost:5000
+const API_BASE = (import.meta.env.VITE_API_URL as string) || '';
+
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -37,7 +41,8 @@ async function request<T>(
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(endpoint, {
+    const url = API_BASE ? `${API_BASE}${endpoint}` : endpoint;
+    const response = await fetch(url, {
       ...options,
       headers,
     });
