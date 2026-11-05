@@ -92,7 +92,7 @@ async function request<T>(
 export const api = {
   // Public Configuration & Health
   async getHealth() {
-    return request<{ status: string; adminGmailConfigured: boolean; adminGmail: string }>('/api/health');
+    return request<{ status: string; service: string; time: string }>('/api/health');
   },
 
   async getConfig() {
