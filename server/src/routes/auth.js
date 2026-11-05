@@ -45,23 +45,20 @@ router.post('/register', async (req, res) => {
       district,
       wardNumber,
       streetAddress,
-      citizenshipNumber,
-      panNumber,
-      bankName,
-      accountName,
-      accountNumber,
-      branch,
     } = req.body;
 
-    if (!fullName || (!email && !phone)) {
+    if (typeof fullName !== 'string' || fullName.trim().length < 2 || fullName.trim().length > 100 || (!email && !phone)) {
       return res.status(400).json({
         success: false,
         error: 'Full name and at least an email or mobile phone number are required.',
       });
     }
 
-    const cleanEmail = email ? email.trim().toLowerCase() : '';
-    const cleanPhone = phone ? phone.trim() : '';
+    if (typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, error: 'Password must be between 10 and 128 characters.' });
+    const cleanEmail = email ? String(email).trim().toLowerCase() : '';
+    const cleanPhone = phone ? String(phone).trim() : '';
+    if (cleanEmail && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'Enter a valid email address.' });
+    if (cleanPhone && normalizePhone(cleanPhone).length < 10) return res.status(400).json({ success: false, error: 'Enter a valid phone number.' });
 
     // Check if user already exists
     const queryConditions = [];
@@ -104,16 +101,6 @@ router.post('/register', async (req, res) => {
       district: district || 'Kaski',
       wardNumber: wardNumber || '',
       streetAddress: streetAddress || '',
-      citizenshipNumber: citizenshipNumber || '',
-      panNumber: panNumber || '',
-      bankDetails: bankName
-        ? {
-            bankName,
-            accountName: accountName || fullName,
-            accountNumber: accountNumber || '',
-            branch: branch || '',
-          }
-        : undefined,
       kycStatus: finalRole === 'owner' ? 'pending' : 'none',
       status: 'active',
       securityClearance: '',
@@ -174,7 +161,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    if (user.status === 'suspended') {
+    if (user.status !== 'active') {
       return res.status(403).json({
         success: false,
         error: 'This account has been suspended by the platform administrator.',
@@ -246,7 +233,7 @@ router.post('/google', async (req, res) => {
     let user = await User.findOne({ email: cleanEmail });
 
     if (user) {
-      if (user.status === 'suspended') {
+      if (user.status !== 'active') {
         return res.status(403).json({
           success: false,
           error: 'This account has been suspended by the administrator.',
