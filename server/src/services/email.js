@@ -92,13 +92,10 @@ export async function sendPasswordResetEmail({ to, code, name }) {
   const transporter = createTransporter();
 
   if (!transporter) {
-    console.warn(`⚠️ [Email Service] No EMAIL_PASS configured in server/.env.`);
-    console.warn(`👉 To send real emails from ${senderEmail}, set EMAIL_PASS in server/.env (Google App Password).`);
-    console.log(`🔑 Verification code for ${to}: ${code}`);
+    console.warn('Email delivery is not configured; verification email was not sent.');
     return {
       sent: false,
       reason: 'EMAIL_PASS not configured in server/.env',
-      code,
     };
   }
 
