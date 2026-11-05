@@ -93,7 +93,7 @@ router.post('/register', async (req, res) => {
 
     const newUser = new User({
       fullName: fullName.trim(),
-      email: cleanEmail ||     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'A valid, verified email address is required.' });,
+      email: cleanEmail,
       phone: cleanPhone || undefined,
       password,
       role: finalRole,
