@@ -986,3 +986,39 @@ td strong { color: #4a5a4e; font-size: 9px; font-weight: 700; }
 }
 
 
+
+/* Live host workspace */
+.host-workspace { display:flex; flex-direction:column; gap:22px; }
+.host-listing-form { background:#fff; border:1px solid #e4e9e5; border-radius:14px; padding:24px; box-shadow:0 8px 28px rgba(25,49,40,.05); }
+.host-form-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:15px; margin-bottom:18px; }
+.host-form-heading h2 { margin:6px 0 0; color:#17372f; font:700 20px Manrope,sans-serif; }
+.host-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; }
+.host-form-grid .form-label { display:flex; flex-direction:column; gap:7px; margin:0; color:#344b42; font-size:11px; font-weight:700; }
+.host-form-grid input,.host-form-grid select,.host-form-grid textarea { width:100%; min-height:42px; border:1px solid #dfe6e0; border-radius:8px; padding:10px 12px; background:#fff; color:#263b32; font:400 12px 'DM Sans',sans-serif; outline-color:#2b6e4f; }
+.host-form-grid textarea { resize:vertical; }
+.host-form-wide { grid-column:1/-1; }
+.host-form-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; padding-top:16px; border-top:1px solid #edf0ed; }
+.host-form-error,.host-alert-error { color:#a33b34; background:#fff4f2; border:1px solid #f0d2ce; border-radius:8px; padding:11px 13px; font-size:11px; }
+.host-listings-panel { overflow:hidden; }
+.host-empty-state { min-height:170px; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:10px; padding:30px; color:#829087; text-align:center; font-size:12px; }
+.host-empty-state h3 { margin:0; color:#263b32; font:700 17px Manrope,sans-serif; }
+.host-empty-state p { max-width:420px; margin:0; line-height:1.6; }
+.host-property-list { display:flex; flex-direction:column; }
+.host-property-row { display:grid; grid-template-columns:104px minmax(0,1fr) auto; align-items:center; gap:16px; padding:17px 19px; border-top:1px solid #edf0ed; }
+.host-property-thumb { width:104px; height:78px; display:grid; place-items:center; overflow:hidden; border-radius:9px; background:#edf2ed; color:#456457; font-size:10px; font-weight:700; text-align:center; }
+.host-property-thumb img { width:100%; height:100%; object-fit:cover; }
+.host-property-main { min-width:0; }
+.host-property-main h4 { margin:0 0 5px; color:#263b32; font:700 13px Manrope,sans-serif; }
+.host-property-main p { margin:0 0 8px; color:#829087; font-size:10px; }
+.host-status { display:inline-flex; padding:4px 8px; border-radius:20px; background:#f1f3f1; color:#68766d; font-size:9px; font-weight:800; text-transform:capitalize; }
+.host-status-active { background:#eaf5ed; color:#32744b; }
+.host-status-pending_approval { background:#fff5df; color:#946a1d; }
+.host-status-paused { background:#edf2f8; color:#62748a; }
+.host-status-draft { background:#f1f3f1; color:#68766d; }
+.host-property-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:7px; }
+.host-property-actions .button { min-height:33px; padding:0 9px; font-size:9px; }
+.host-property-actions .button svg { width:13px; height:13px; }
+.host-remove-button { width:33px; height:33px; display:grid; place-items:center; border:1px solid #f0d8d5; border-radius:8px; background:#fff; color:#b65b52; }
+.host-review-note { color:#94712d; font-size:10px; font-weight:700; }
+.host-workspace-note { margin:0; color:#929eaa; font-size:10px; line-height:1.6; }
+@media(max-width:760px) { .host-form-grid { grid-template-columns:1fr; } .host-property-row { grid-template-columns:76px minmax(0,1fr); } .host-property-thumb { width:76px; height:68px; } .host-property-actions { grid-column:1/-1; justify-content:flex-start; } .host-listing-form { padding:17px; } }
