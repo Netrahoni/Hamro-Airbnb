@@ -39,6 +39,7 @@ function createTransporter() {
 export async function sendPasswordResetEmail({ to, code, name, purpose = 'password_reset' }) {
   const isSignup = purpose === 'signup';
   const recipientName = name || 'Traveler';
+  const safeName = String(recipientName).replace(/[&<>\"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[character]));
   const senderEmail = process.env.EMAIL_USER || process.env.ADMIN_GMAIL || 'nepalstay.ai@gmail.com';
 
   const html = `
@@ -69,7 +70,7 @@ export async function sendPasswordResetEmail({ to, code, name, purpose = 'passwo
         </div>
         <div class="tag">Security Verification</div>
         <h1>${isSignup ? 'Email Verification Code' : 'Password Reset Code'}</h1>
-        <p>Namaste <strong>${recipientName}</strong>,</p>
+        <p>Namaste <strong>${safeName}</strong>,</p>
         <p>${isSignup ? 'Use this 6-digit code to verify your email address and complete your NepalStay registration:' : 'We received a request to reset the password for your NepalStay account. Use the 6-digit verification code below to authorize this change:'}</p>
         
         <div class="code-box">
