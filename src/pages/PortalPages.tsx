@@ -272,8 +272,38 @@ export function AdminPage() {
   const config = adminConfig[pathname] ?? adminConfig['/admin/dashboard'];
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [moderationProperties, setModerationProperties] = useState<HostProperty[]>([]);
+  const [moderationLoading, setModerationLoading] = useState(false);
+  const [moderationError, setModerationError] = useState('');
+  const [moderationBusyId, setModerationBusyId] = useState('');
 
   const { users, updateUserStatus, updateUserKyc } = useAuth();
+
+  const loadModerationProperties = async () => {
+    setModerationLoading(true);
+    setModerationError('');
+    const result = await api.getHostProperties();
+    if (result.success && result.data?.properties) setModerationProperties(result.data.properties);
+    else setModerationError(result.error || 'Unable to load property listings.');
+    setModerationLoading(false);
+  };
+
+  useEffect(() => {
+    if (pathname === '/admin/listings') void loadModerationProperties();
+  }, [pathname]);
+
+  const moderateProperty = async (property: HostProperty, status: string) => {
+    const id = property.id || property._id || '';
+    setModerationBusyId(id);
+    setModerationError('');
+    const result = await api.updateHostPropertyStatus(id, status);
+    setModerationBusyId('');
+    if (!result.success) {
+      setModerationError(result.error || 'Unable to update listing status.');
+      return;
+    }
+    await loadModerationProperties();
+  };
 
   // If on /admin/users, use real live users from AuthContext
   if (pathname === '/admin/users') {
@@ -544,6 +574,43 @@ export function AdminPage() {
             </span>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (pathname === '/admin/listings') {
+    const pending = moderationProperties.filter(property => property.status === 'pending_approval');
+    const published = moderationProperties.filter(property => property.status === 'active');
+    return (
+      <div className="portal-page host-workspace">
+        <SectionHeading eyebrow="PROPERTY MODERATION" title="Review host property listings" description="Approve complete listings for guest search or hold them for host corrections."/>
+        <div className="stats-grid">
+          <StatCard title="Total listings" value={String(moderationProperties.length)} note="All host accounts" index={0}/>
+          <StatCard title="Awaiting review" value={String(pending.length)} note="Submitted by hosts" index={1}/>
+          <StatCard title="Published" value={String(published.length)} note="Visible to guests" index={2}/>
+          <StatCard title="Draft / paused" value={String(moderationProperties.filter(p=>['draft','paused'].includes(p.status)).length)} note="Not public" index={3}/>
+        </div>
+        {moderationError && <div className="host-alert host-alert-error" role="alert">{moderationError}</div>}
+        <div className="panel host-listings-panel">
+          <div className="panel-heading"><div><h3>All submitted listings</h3><p className="muted">A listing becomes public only after an administrator approves it.</p></div><button className="plain-action" onClick={()=>void loadModerationProperties()}>Refresh</button></div>
+          {moderationLoading ? <div className="host-empty-state">Loading property listings…</div>
+            : moderationProperties.length === 0 ? <div className="host-empty-state">No property listings have been created yet.</div>
+            : <div className="host-property-list">{moderationProperties.map(property=>(
+              <article className="host-property-row" key={property.id || property._id}>
+                <div className="host-property-thumb">{property.images?.[0] ? <img src={property.images[0]} alt={property.title}/> : <span>{property.propertyType}</span>}</div>
+                <div className="host-property-main"><h4>{property.title}</h4><p>{property.location?.city} · {property.hostName || 'Host'} · NPR {Number(property.pricePerNight).toLocaleString()} / night</p><span className={`host-status host-status-${property.status}`}>{property.status.replace('_',' ')}</span></div>
+                <div className="host-property-actions">
+                  {property.status === 'pending_approval' && <>
+                    <button className="button button-dark" disabled={moderationBusyId === (property.id || property._id)} onClick={()=>void moderateProperty(property,'active')}>Approve & publish</button>
+                    <button className="button button-outline" disabled={moderationBusyId === (property.id || property._id)} onClick={()=>void moderateProperty(property,'paused')}>Hold for changes</button>
+                  </>}
+                  {property.status === 'active' && <button className="button button-outline" disabled={moderationBusyId === (property.id || property._id)} onClick={()=>void moderateProperty(property,'paused')}>Pause listing</button>}
+                  {['draft','paused','unlisted'].includes(property.status) && <span className="host-review-note">Not public</span>}
+                </div>
+              </article>
+            ))}</div>}
+        </div>
+        <p className="host-workspace-note">Publishing is an administrator action. Hosts can create and edit drafts, but cannot make their own listings public.</p>
       </div>
     );
   }
