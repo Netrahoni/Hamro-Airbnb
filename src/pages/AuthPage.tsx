@@ -69,7 +69,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     adminLogin,
     forgotPassword,
     resetPassword,
-    adminGmail,
   } = useAuth();
 
   const [activeRole, setActiveRole] = useState<UserRole>(roleParam || 'guest');
@@ -89,6 +88,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [guestPhone, setGuestPhone] = useState('+977 98');
   const [guestPassword, setGuestPassword] = useState('');
   const [showOtpModal, setShowOtpModal] = useState(false);
+  const [pendingSignupRole, setPendingSignupRole] = useState<'guest' | 'owner'>('guest');
   const [otpCode, setOtpCode] = useState('');
   const [signupOtpMsg, setSignupOtpMsg] = useState('');
 
@@ -171,46 +171,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     });
   }, []);
 
-  // Real Google OAuth: Process Access Token (OAuth2 popup)
-  const processGoogleAccessToken = async (accessToken: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) {
-        throw new Error('Failed to retrieve user profile from Google.');
-      }
-      const profile = await res.json();
-      const email = (profile.email as string) || '';
-      const name = (profile.name as string) || (profile.given_name as string) || email.split('@')[0] || 'Traveler';
-      const avatarUrl = (profile.picture as string) || undefined;
-      const googleId = (profile.sub as string) || undefined;
-
-      if (!email) {
-        throw new Error('Google did not return an email address.');
-      }
-
-      const authRes = await loginWithGoogle(
-        { name, email, avatarUrl, googleId },
-        accessToken
-      );
-
-      if (authRes.success) {
-        const isDesignatedAdmin = adminGmail && email.trim().toLowerCase() === adminGmail.trim().toLowerCase();
-        handleRedirect(isDesignatedAdmin ? 'admin' : (authRes.user?.role || 'guest'));
-      } else {
-        setError(authRes.error || 'Google authentication failed.');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error during Google sign-in.';
-      setError(msg);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // Real Google OAuth: Process ID Token (One-Tap / Credential JWT)
   const processGoogleIdToken = async (idToken: string) => {
     setIsLoading(true);
@@ -232,8 +192,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       );
 
       if (res.success) {
-        const isDesignatedAdmin = adminGmail && email.trim().toLowerCase() === adminGmail.trim().toLowerCase();
-        handleRedirect(isDesignatedAdmin ? 'admin' : (res.user?.role || 'guest'));
+        handleRedirect(res.user?.role || 'guest');
       } else {
         setError(res.error || 'Google sign-in failed.');
       }
@@ -298,42 +257,9 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     };
   }, [googleClientId, activeRole, isSignup]);
 
-  // Click handler for fallback button
+  // The fallback is informational only. Authentication is accepted exclusively through Google's signed ID credential.
   const handleGoogleAuthClick = () => {
-    setError(null);
-    if (!googleClientId) {
-      setError('Connecting to Google services... Please wait a moment and try again.');
-      return;
-    }
-
-    const google = (window as unknown as { google?: { accounts?: { oauth2?: { initTokenClient: (cfg: unknown) => { requestAccessToken: (opts?: unknown) => void } } } } }).google;
-
-    if (google?.accounts?.oauth2) {
-      try {
-        const client = google.accounts.oauth2.initTokenClient({
-          client_id: googleClientId,
-          scope: 'openid email profile',
-          callback: async (response: { access_token?: string; error?: string }) => {
-            if (response?.error) {
-              if (response.error === 'popup_closed_by_user') return;
-              setError(`Google Sign-In notice: ${response.error}. Ensure your current URL is in Google Cloud Console's Authorized JavaScript Origins.`);
-              return;
-            }
-            if (response?.access_token) {
-              await processGoogleAccessToken(response.access_token);
-            }
-          },
-        });
-        client.requestAccessToken({ prompt: 'select_account' });
-        return;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Google OAuth error';
-        setError(msg);
-        return;
-      }
-    }
-
-    setError('Google Sign-In is initializing. Please wait a moment.');
+    setError('Secure Google Sign-In is still loading. Please wait for the official Google button to appear.');
   };
 
   // Standard Login Submit
@@ -357,7 +283,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     }
   };
 
-  // Guest Registration with Email & Phone Verification
+  // Guest registration starts with a server-issued email verification code.
   const handleGuestSignupStart = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -365,77 +291,76 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       setError('Please fill in all required registration fields.');
       return;
     }
-
     setIsLoading(true);
-    const res = await api.sendVerificationCode({
-      email: guestEmail.trim(),
-      phone: guestPhone.trim(),
-      fullName: guestName.trim(),
-    });
+    const res = await api.sendVerificationCode({ email: guestEmail.trim(), fullName: guestName.trim() });
     setIsLoading(false);
-
-    if (res.success) {
-      setSignupOtpMsg(
-        res.data?.emailSent
-          ? `✓ A 6-digit code was sent to ${guestEmail}. Check your inbox or spam folder.`
-          : `Verification code sent. Check your inbox.`
-      );
-      setShowOtpModal(true);
-    } else {
-      setShowOtpModal(true);
+    if (!res.success) {
+      setError(res.error || 'Unable to send the verification code.');
+      return;
     }
+    setPendingSignupRole('guest');
+    setOtpCode('');
+    setSignupOtpMsg(`A six-digit verification code was sent to ${guestEmail}. It expires in 10 minutes.`);
+    setShowOtpModal(true);
   };
 
   const handleGuestSignupComplete = async () => {
-    if (otpCode.length < 6) {
-      setError('Please enter the 6-digit verification code.');
+    if (!/^\d{6}$/.test(otpCode)) {
+      setError('Please enter the six-digit verification code.');
       return;
     }
-
     setIsLoading(true);
-    const res = await register({
-      fullName: guestName,
-      email: guestEmail,
-      phone: guestPhone,
-      password: guestPassword,
-      role: 'guest',
-    });
+    setError(null);
+    const email = pendingSignupRole === 'guest' ? guestEmail.trim() : hostData.email.trim();
+    const verification = await api.verifyEmailCode(email, otpCode);
+    if (!verification.success || !verification.data?.verificationToken) {
+      setIsLoading(false);
+      setError(verification.error || 'Email verification failed. Request a new code.');
+      return;
+    }
+    const result = pendingSignupRole === 'guest'
+      ? await register({
+          fullName: guestName,
+          email: guestEmail,
+          phone: guestPhone,
+          password: guestPassword,
+          role: 'guest',
+          emailVerificationToken: verification.data.verificationToken,
+        })
+      : await registerHost({ ...hostData, emailVerificationToken: verification.data.verificationToken });
     setIsLoading(false);
-
-    if (res.success) {
+    if (result.success) {
       setShowOtpModal(false);
-      setSuccessMsg('Account registered successfully! Redirecting...');
-      setTimeout(() => handleRedirect('guest'), 600);
+      setSuccessMsg(pendingSignupRole === 'guest' ? 'Account registered successfully! Redirecting...' : 'Host partner application submitted! Welcome to your host dashboard.');
+      setTimeout(() => handleRedirect(pendingSignupRole), 700);
     } else {
-      setError(res.error || 'Registration failed.');
+      setError(result.error || 'Registration failed.');
     }
   };
 
-  // Host Registration Submit
+  // Host registration also requires verified email before the account is created.
   const handleHostRegisterSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-
     if (!hostData.fullName.trim() || !hostData.email.trim() || !hostData.password) {
       setError('Please fill in your primary contact and host security credentials.');
       return;
     }
-
-    if (!hostData.propertyName.trim() || !hostData.panNumber.trim() || !hostData.accountNumber.trim()) {
-      setError('Please fill in all mandatory legal, tax, and banking details.');
+    if (!hostData.propertyName.trim() || !hostData.city.trim()) {
+      setError('Please provide your property name and city.');
       return;
     }
-
     setIsLoading(true);
-    const res = await registerHost(hostData);
+    const res = await api.sendVerificationCode({ email: hostData.email.trim(), fullName: hostData.fullName.trim() });
     setIsLoading(false);
-
-    if (res.success) {
-      setSuccessMsg('Host partner application submitted! Welcome to your host dashboard.');
-      setTimeout(() => handleRedirect('owner'), 800);
-    } else {
-      setError(res.error || 'Host partner registration failed.');
+    if (!res.success) {
+      setError(res.error || 'Unable to send the verification code.');
+      return;
     }
+    setPendingSignupRole('owner');
+    setOtpCode('');
+    setSignupOtpMsg(`A six-digit verification code was sent to ${hostData.email}. It expires in 10 minutes.`);
+    setShowOtpModal(true);
   };
 
   // Forgot Password Handlers
@@ -471,8 +396,8 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       return;
     }
 
-    if (!forgotNewPassword || forgotNewPassword.length < 6) {
-      setForgotError('New password must be at least 6 characters.');
+    if (!forgotNewPassword || forgotNewPassword.length < 10) {
+      setForgotError('New password must be at least 10 characters.');
       return;
     }
 
@@ -500,7 +425,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     e.preventDefault();
     setError(null);
     if (!adminStaffId.trim() || !adminPassword) {
-      setError('Admin email or Staff ID and Master Password are required.');
+      setError('Administrator email/phone and password are required.');
       return;
     }
     // Proceed to Step 2 (TOTP verification)
@@ -1156,127 +1081,36 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                     </div>
                   )}
 
-                  {/* Step 3: Legal & Tax Compliance */}
+                  {/* Step 3: KYC is deferred until secure document handling is available. */}
                   {hostStep === 3 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                       <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <FileCheck size={16} /> Government of Nepal Verification
+                        <FileCheck size={16} /> Identity & Tax Verification
                       </div>
-                      <label className="form-label">
-                        <span>Nepali Citizenship Certificate Number</span>
-                        <input
-                          type="text"
-                          value={hostData.citizenshipNumber}
-                          onChange={(e) => setHostData({ ...hostData, citizenshipNumber: e.target.value })}
-                          placeholder="e.g. 48-01-72-00412"
-                          required
-                        />
-                      </label>
-                      <label className="form-label">
-                        <span>Inland Revenue Department PAN Number (9 Digits)</span>
-                        <input
-                          type="text"
-                          value={hostData.panNumber}
-                          onChange={(e) => setHostData({ ...hostData, panNumber: e.target.value })}
-                          placeholder="e.g. 601239841"
-                          maxLength={9}
-                          required
-                        />
-                      </label>
+                      <div className="demo-callout">
+                        <ShieldCheck size={17}/>
+                        <span>We will request citizenship, PAN and supporting documents through a secure verification workflow after your account is created. Do not enter or upload identity numbers on this registration screen.</span>
+                      </div>
                       <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(2)}>
-                          Back
-                        </button>
-                        <button
-                          type="button"
-                          className="button button-dark"
-                          style={{ flex: 1 }}
-                          onClick={() => {
-                            if (!hostData.citizenshipNumber.trim() || !hostData.panNumber.trim()) {
-                              setError('Please enter citizenship number and PAN number.');
-                              return;
-                            }
-                            setError(null);
-                            setHostStep(4);
-                          }}
-                        >
-                          Continue to Payout Banking <ArrowRight size={16} />
-                        </button>
+                        <button type="button" className="button button-outline" onClick={() => setHostStep(2)}>Back</button>
+                        <button type="button" className="button button-dark" style={{ flex: 1 }} onClick={() => setHostStep(4)}>Continue to Payout Setup <ArrowRight size={16}/></button>
                       </div>
                     </div>
                   )}
 
-                  {/* Step 4: Banking & Payouts */}
+                  {/* Step 4: Payout information is collected only after secure onboarding is available. */}
                   {hostStep === 4 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                       <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Landmark size={16} /> Payout Settlement Account
+                        <Landmark size={16}/> Payout Settlement
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label className="form-label">
-                          <span>Bank in Nepal</span>
-                          <select
-                            value={hostData.bankName}
-                            onChange={(e) => setHostData({ ...hostData, bankName: e.target.value })}
-                          >
-                            <option value="Nabil Bank Ltd">Nabil Bank Ltd</option>
-                            <option value="NIC Asia Bank">NIC Asia Bank</option>
-                            <option value="Global IME Bank">Global IME Bank</option>
-                            <option value="Siddhartha Bank">Siddhartha Bank</option>
-                            <option value="Everest Bank">Everest Bank</option>
-                            <option value="Nepal Investment Mega Bank">NIMB Bank</option>
-                          </select>
-                        </label>
-                        <label className="form-label">
-                          <span>Branch Office</span>
-                          <input
-                            type="text"
-                            value={hostData.branch}
-                            onChange={(e) => setHostData({ ...hostData, branch: e.target.value })}
-                            placeholder="e.g. Pokhara Branch"
-                            required
-                          />
-                        </label>
+                      <div className="demo-callout">
+                        <ShieldCheck size={17}/>
+                        <span>Bank account and payout details are not collected during signup. You can add them later when the secure host payout workflow is enabled.</span>
                       </div>
-                      <label className="form-label">
-                        <span>Account Holder's Name</span>
-                        <input
-                          type="text"
-                          value={hostData.accountName || hostData.fullName}
-                          onChange={(e) => setHostData({ ...hostData, accountName: e.target.value })}
-                          placeholder="Exact name as in bank record"
-                          required
-                        />
-                      </label>
-                      <label className="form-label">
-                        <span>Account Number</span>
-                        <input
-                          type="text"
-                          value={hostData.accountNumber}
-                          onChange={(e) => setHostData({ ...hostData, accountNumber: e.target.value })}
-                          placeholder="e.g. 01801017500124"
-                          required
-                        />
-                      </label>
                       <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(3)}>
-                          Back
-                        </button>
-                        <button
-                          type="button"
-                          className="button button-dark"
-                          style={{ flex: 1 }}
-                          onClick={() => {
-                            if (!hostData.accountNumber.trim()) {
-                              setError('Please provide your bank account number.');
-                              return;
-                            }
-                            setError(null);
-                            setHostStep(5);
-                          }}
-                        >
-                          Continue to Final Step <ArrowRight size={16} />
-                        </button>
+                        <button type="button" className="button button-outline" onClick={() => setHostStep(3)}>Back</button>
+                        <button type="button" className="button button-dark" style={{ flex: 1 }} onClick={() => setHostStep(5)}>Continue to Final Step <ArrowRight size={16}/></button>
                       </div>
                     </div>
                   )}
@@ -1285,30 +1119,9 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                   {hostStep === 5 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Lock size={16} /> Security & Room Capacity
+                        <Lock size={16} /> Secure Host Account
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label className="form-label">
-                          <span>Room Capacity</span>
-                          <input
-                            type="number"
-                            value={hostData.roomCount}
-                            onChange={(e) => setHostData({ ...hostData, roomCount: Number(e.target.value) })}
-                            min={1}
-                            required
-                          />
-                        </label>
-                        <label className="form-label">
-                          <span>Base Rate (NPR / Night)</span>
-                          <input
-                            type="number"
-                            value={hostData.baseRate}
-                            onChange={(e) => setHostData({ ...hostData, baseRate: Number(e.target.value) })}
-                            step={100}
-                            required
-                          />
-                        </label>
-                      </div>
+                      <p className="muted" style={{ fontSize: '11px', lineHeight: 1.6 }}>Your host account will be created after email verification. Add room inventory, nightly rates and property photos later from the Host Dashboard.</p>
                       <label className="form-label">
                         <span>Host Account Password</span>
                         <input
@@ -1368,7 +1181,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
             </h1>
             <p className="muted" style={{ fontSize: '13px', marginBottom: '16px' }}>
               {adminStep === 'credentials'
-                ? 'Sign in with your configured Main Gmail or Staff Admin credentials.'
+                ? 'Sign in with a provisioned administrator email/phone, password and authenticator code.'
                 : 'Enter your 6-digit TOTP token generated by your Authenticator app.'}
             </p>
 
@@ -1377,12 +1190,12 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
               /* ADMIN STEP 1: STAFF ID / GMAIL & MASTER PASSWORD */
               <form onSubmit={handleAdminStep1}>
                 <label className="form-label">
-                  <span>Main Admin Gmail or Staff ID</span>
+                  <span>Administrator email or phone</span>
                   <input
                     type="text"
                     value={adminStaffId}
                     onChange={(e) => setAdminStaffId(e.target.value)}
-                    placeholder="yourname@gmail.com or Staff ID"
+                    placeholder="admin@example.com or +977 phone"
                     required
                   />
                 </label>

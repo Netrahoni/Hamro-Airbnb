@@ -36,8 +36,10 @@ function createTransporter() {
 /**
  * Send Password Reset Verification Email
  */
-export async function sendPasswordResetEmail({ to, code, name }) {
+export async function sendPasswordResetEmail({ to, code, name, purpose = 'password_reset' }) {
+  const isSignup = purpose === 'signup';
   const recipientName = name || 'Traveler';
+  const safeName = String(recipientName).replace(/[&<>\"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '\"': '&quot;', "'": '&#39;' }[character]));
   const senderEmail = process.env.EMAIL_USER || process.env.ADMIN_GMAIL || 'nepalstay.ai@gmail.com';
 
   const html = `
@@ -67,16 +69,16 @@ export async function sendPasswordResetEmail({ to, code, name }) {
           <span class="brand-text">NepalStay AI</span>
         </div>
         <div class="tag">Security Verification</div>
-        <h1>Password Reset Code</h1>
-        <p>Namaste <strong>${recipientName}</strong>,</p>
-        <p>We received a request to reset the password for your NepalStay account. Use the 6-digit verification code below to authorize this change:</p>
+        <h1>${isSignup ? 'Email Verification Code' : 'Password Reset Code'}</h1>
+        <p>Namaste <strong>${safeName}</strong>,</p>
+        <p>${isSignup ? 'Use this 6-digit code to verify your email address and complete your NepalStay registration:' : 'We received a request to reset the password for your NepalStay account. Use the 6-digit verification code below to authorize this change:'}</p>
         
         <div class="code-box">
           <div class="code-digits">${code}</div>
-          <div class="expiry-note">⏱️ Valid for 15 minutes only</div>
+          <div class="expiry-note">⏱️ Valid for ${isSignup ? '10' : '15'} minutes only</div>
         </div>
 
-        <p>If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged and your account remains secure.</p>
+        <p>${isSignup ? 'If you did not request this verification code, you can ignore this email.' : 'If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged and your account remains secure.'}</p>
         
         <div class="warning">
           <strong>Security Tip:</strong> Never share this code with anyone. NepalStay staff will never ask for your verification code or password.
@@ -92,13 +94,10 @@ export async function sendPasswordResetEmail({ to, code, name }) {
   const transporter = createTransporter();
 
   if (!transporter) {
-    console.warn(`⚠️ [Email Service] No EMAIL_PASS configured in server/.env.`);
-    console.warn(`👉 To send real emails from ${senderEmail}, set EMAIL_PASS in server/.env (Google App Password).`);
-    console.log(`🔑 Verification code for ${to}: ${code}`);
+    console.warn('Email delivery is not configured; verification email was not sent.');
     return {
       sent: false,
       reason: 'EMAIL_PASS not configured in server/.env',
-      code,
     };
   }
 
@@ -106,8 +105,8 @@ export async function sendPasswordResetEmail({ to, code, name }) {
     const info = await transporter.sendMail({
       from: `"NepalStay Security" <${senderEmail}>`,
       to,
-      subject: `Your NepalStay verification code: ${code}`,
-      text: `Your NepalStay password reset verification code is: ${code}. It expires in 15 minutes.`,
+      subject: isSignup ? 'Verify your NepalStay email address' : 'Your NepalStay password reset code',
+      text: isSignup ? `Your NepalStay email verification code is: ${code}. It expires in 10 minutes.` : `Your NepalStay password reset verification code is: ${code}. It expires in 15 minutes.`,
       html,
     });
 

@@ -89,8 +89,8 @@ const propertySchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['active', 'pending_approval', 'paused', 'unlisted'],
-      default: 'active',
+      enum: ['draft', 'active', 'pending_approval', 'paused', 'unlisted'],
+      default: 'draft',
     },
     featured: {
       type: Boolean,

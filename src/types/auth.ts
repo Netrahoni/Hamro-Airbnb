@@ -48,6 +48,7 @@ export interface RegisterInput {
   propertyName?: string;
   propertyCity?: string;
   propertyType?: string;
+  emailVerificationToken?: string;
 }
 
 export interface HostRegisterInput {
@@ -70,6 +71,7 @@ export interface HostRegisterInput {
   branch: string;
   roomCount: number;
   baseRate: number;
+  emailVerificationToken?: string;
 }
 
 export interface AdminLoginInput {

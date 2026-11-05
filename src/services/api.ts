@@ -8,6 +8,27 @@ import type {
   UserStatus,
 } from '../types/auth';
 
+
+export type HostProperty = {
+  _id?: string;
+  id: string;
+  title: string;
+  hostName?: string;
+  tagline?: string;
+  propertyType: string;
+  location: { city: string; province?: string; district?: string; wardNumber?: string; streetAddress?: string };
+  pricePerNight: number;
+  description?: string;
+  images?: string[];
+  amenities?: string[];
+  bedrooms?: number;
+  bathrooms?: number;
+  maxGuests?: number;
+  status: 'draft' | 'active' | 'pending_approval' | 'paused' | 'unlisted';
+};
+
+export type HostPropertyInput = Omit<HostProperty, 'id' | '_id' | 'status'> & { status?: string };
+
 const TOKEN_KEY = 'ns_jwt_token';
 
 // In production (Vercel), VITE_API_URL points to the deployed backend.
@@ -72,11 +93,11 @@ async function request<T>(
 export const api = {
   // Public Configuration & Health
   async getHealth() {
-    return request<{ status: string; adminGmailConfigured: boolean; adminGmail: string }>('/api/health');
+    return request<{ status: string; service: string; time: string }>('/api/health');
   },
 
   async getConfig() {
-    return request<{ adminGmailConfigured: boolean; adminGmail: string; googleClientId: string }>('/api/auth/config');
+    return request<{ adminGmailConfigured: boolean; googleClientId: string }>('/api/auth/config');
   },
 
   // Auth Operations
@@ -128,12 +149,7 @@ export const api = {
       district: input.district,
       wardNumber: input.wardNumber,
       streetAddress: input.streetAddress,
-      citizenshipNumber: input.citizenshipNumber,
-      panNumber: input.panNumber,
-      bankName: input.bankName,
-      accountName: input.accountName,
-      accountNumber: input.accountNumber,
-      branch: input.branch,
+      emailVerificationToken: input.emailVerificationToken,
     };
 
     const res = await request<{ user: User; token: string }>('/api/auth/register', {
@@ -175,6 +191,14 @@ export const api = {
     });
   },
 
+
+  async verifyEmailCode(email: string, code: string) {
+    return request<{ verificationToken: string }>('/api/auth/verify-email-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    });
+  },
+
   async sendVerificationCode(data: { email?: string; phone?: string; fullName?: string }) {
     return request<{ code: string; emailSent: boolean; message: string }>('/api/auth/send-verification-code', {
       method: 'POST',
@@ -194,6 +218,28 @@ export const api = {
     return request<{ message: string }>('/api/auth/logout', {
       method: 'POST',
     });
+  },
+
+
+  // Host property management
+  async getHostProperties() {
+    return request<{ properties: HostProperty[]; count: number }>('/api/properties/mine');
+  },
+
+  async createHostProperty(input: HostPropertyInput) {
+    return request<{ property: HostProperty }>('/api/properties', { method: 'POST', body: JSON.stringify(input) });
+  },
+
+  async updateHostProperty(id: string, input: HostPropertyInput) {
+    return request<{ property: HostProperty }>(`/api/properties/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  },
+
+  async updateHostPropertyStatus(id: string, status: string) {
+    return request<{ property: HostProperty }>(`/api/properties/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  },
+
+  async removeHostProperty(id: string) {
+    return request<{ message: string }>(`/api/properties/${id}`, { method: 'DELETE' });
   },
 
   // Admin User Management
