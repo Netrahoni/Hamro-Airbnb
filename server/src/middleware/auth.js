@@ -57,3 +57,24 @@ export function generateToken(user) {
     audience: 'nepalstay-client',
   });
 }
+
+/** Optional authentication for routes that serve public content and private owner previews. */
+export async function optionalAuth(req, res, next) {
+  try {
+    const header = req.headers.authorization || '';
+    if (!header) return next();
+    if (!header.startsWith('Bearer ')) return res.status(401).json({ success: false, error: 'Invalid authentication header.' });
+    const token = header.slice(7).trim();
+    const decoded = jwt.verify(token, getJwtSecret(), {
+      algorithms: ['HS256'],
+      issuer: 'nepalstay-api',
+      audience: 'nepalstay-client',
+    });
+    const user = await User.findById(decoded.id);
+    if (!user || user.status !== 'active') return res.status(401).json({ success: false, error: 'Invalid authentication session.' });
+    req.user = user;
+    return next();
+  } catch {
+    return res.status(401).json({ success: false, error: 'Invalid authentication token.' });
+  }
+}
