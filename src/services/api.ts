@@ -195,6 +195,14 @@ export const api = {
     });
   },
 
+
+  async verifyEmailCode(email: string, code: string) {
+    return request<{ verificationToken: string }>('/api/auth/verify-email-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    });
+  },
+
   async sendVerificationCode(data: { email?: string; phone?: string; fullName?: string }) {
     return request<{ code: string; emailSent: boolean; message: string }>('/api/auth/send-verification-code', {
       method: 'POST',
