@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomInt } from 'node:crypto';
 import { User } from '../models/User.js';
 import { requireAuth, generateToken } from '../middleware/auth.js';
 import { OAuth2Client } from 'google-auth-library';
@@ -11,10 +12,7 @@ function normalizePhone(str = '') {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
-function isAdminEmail(email = '') {
-  const configured = (process.env.ADMIN_GMAIL || '').trim().toLowerCase();
-  return configured && email.trim().toLowerCase() === configured;
-}
+function isAdminEmail() { return false; }
 
 /**
  * GET /api/auth/config
@@ -23,8 +21,7 @@ function isAdminEmail(email = '') {
 router.get('/config', (req, res) => {
   res.json({
     success: true,
-    adminGmailConfigured: Boolean(process.env.ADMIN_GMAIL),
-    adminGmail: process.env.ADMIN_GMAIL || '',
+    adminGmailConfigured: false,
     googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   });
 });
@@ -89,16 +86,9 @@ router.post('/register', async (req, res) => {
       }
     }
 
-    // Determine final role: if email matches ADMIN_GMAIL, elevate to admin
-    let finalRole = role;
-    let securityClearance = '';
-    let twoFactorEnabled = false;
-
-    if (isAdminEmail(cleanEmail)) {
-      finalRole = 'admin';
-      securityClearance = 'Platform Superadmin (Primary Admin Gmail)';
-      twoFactorEnabled = true;
-    }
+    // Public registration may create guests or hosts, never administrators.
+    if (!['guest', 'owner'].includes(role)) return res.status(400).json({ success: false, error: 'Invalid account type.' });
+    const finalRole = role;
 
     const newUser = new User({
       fullName: fullName.trim(),
@@ -128,8 +118,8 @@ router.post('/register', async (req, res) => {
         : undefined,
       kycStatus: finalRole === 'owner' ? 'pending' : 'none',
       status: 'active',
-      securityClearance,
-      twoFactorEnabled,
+      securityClearance: '',
+      twoFactorEnabled: false,
       lastLogin: new Date(),
       lastIp: req.ip || '',
     });
@@ -186,13 +176,6 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Designated Admin Gmail is protected and always active
-    if (isAdminEmail(user.email)) {
-      user.role = 'admin';
-      user.status = 'active';
-      user.securityClearance = 'Platform Superadmin (Primary Admin Gmail)';
-    }
-
     if (user.status === 'suspended') {
       return res.status(403).json({
         success: false,
@@ -207,12 +190,6 @@ router.post('/login', async (req, res) => {
         success: false,
         error: 'Incorrect password. Please verify your credentials and try again.',
       });
-    }
-
-    // Check if role elevation applies
-    if (isAdminEmail(user.email) && user.role !== 'admin') {
-      user.role = 'admin';
-      user.securityClearance = 'Platform Superadmin (Primary Admin Gmail)';
     }
 
     if (expectedRole && user.role !== expectedRole && expectedRole !== 'guest') {
@@ -249,48 +226,16 @@ router.post('/login', async (req, res) => {
  */
 router.post('/google', async (req, res) => {
   try {
-    const { token: googleToken, profile } = req.body;
-
-    let email = profile?.email;
-    let name = profile?.name;
-    let avatarUrl = profile?.avatarUrl;
-    let googleId = profile?.googleId;
-
-    // If an actual Google ID token was passed, attempt verification
-    if (googleToken && process.env.GOOGLE_CLIENT_ID) {
-      try {
-        const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-        const ticket = await client.verifyIdToken({
-          idToken: googleToken,
-          audience: process.env.GOOGLE_CLIENT_ID,
-        });
-        const payload = ticket.getPayload();
-        if (payload) {
-          email = payload.email;
-          name = payload.name;
-          avatarUrl = payload.picture;
-          googleId = payload.sub;
-        }
-      } catch (err) {
-        // If not an ID token (JWT), check if it's an OAuth2 access token
-        try {
-          const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-            headers: { Authorization: `Bearer ${googleToken}` },
-          });
-          if (userinfoRes.ok) {
-            const gUser = await userinfoRes.json();
-            if (gUser.email) {
-              email = gUser.email;
-              name = gUser.name || gUser.given_name || email.split('@')[0];
-              avatarUrl = gUser.picture;
-              googleId = gUser.sub;
-            }
-          }
-        } catch {
-          // Ignore fallback fetch error
-        }
-      }
-    }
+    const { token: googleToken } = req.body;
+    if (!googleToken || !process.env.GOOGLE_CLIENT_ID) return res.status(400).json({ success: false, error: 'A valid Google ID token is required.' });
+    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+    const ticket = await client.verifyIdToken({ idToken: googleToken, audience: process.env.GOOGLE_CLIENT_ID });
+    const payload = ticket.getPayload();
+    if (!payload?.email || payload.email_verified !== true || !payload.sub) return res.status(401).json({ success: false, error: 'Google account email is not verified.' });
+    const email = payload.email;
+    const name = payload.name || email.split('@')[0];
+    const avatarUrl = payload.picture || '';
+    const googleId = payload.sub;
 
     if (!email) {
       return res.status(400).json({
@@ -302,17 +247,9 @@ router.post('/google', async (req, res) => {
     const cleanEmail = email.trim().toLowerCase();
     let user = await User.findOne({ email: cleanEmail });
 
-    const isSystemAdmin = isAdminEmail(cleanEmail);
+    const isSystemAdmin = false;
 
     if (user) {
-      // If user logs in with the designated Admin Gmail, ensure they have admin clearance and are active
-      if (isSystemAdmin) {
-        user.role = 'admin';
-        user.status = 'active';
-        user.securityClearance = 'Platform Superadmin (Primary Admin Gmail)';
-        user.twoFactorEnabled = true;
-      }
-
       if (user.status === 'suspended') {
         return res.status(403).json({
           success: false,
@@ -331,13 +268,13 @@ router.post('/google', async (req, res) => {
       user = new User({
         fullName: name || cleanEmail.split('@')[0],
         email: cleanEmail,
-        role: isSystemAdmin ? 'admin' : 'guest',
+        role: 'guest',
         authProvider: 'google',
         avatar: avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || cleanEmail)}&background=17372f&color=fff`,
         googleId: googleId || undefined,
         status: 'active',
-        securityClearance: isSystemAdmin ? 'Platform Superadmin (Primary Admin Gmail)' : '',
-        twoFactorEnabled: isSystemAdmin,
+        securityClearance: '',
+        twoFactorEnabled: false,
         lastLogin: new Date(),
         lastIp: req.ip || '',
       });
@@ -367,6 +304,7 @@ router.post('/google', async (req, res) => {
  * Secure Administrator login with Staff ID or Admin Gmail + Password + 2FA TOTP code
  */
 router.post('/admin/login', async (req, res) => {
+  return res.status(503).json({ success: false, error: 'Administrator login is disabled until server-side TOTP verification is configured. Admin roles must be assigned through a trusted administrative process.' });
   try {
     const { staffIdOrEmail, password, totpCode } = req.body;
 
@@ -497,40 +435,12 @@ router.put('/profile', requireAuth, async (req, res) => {
       fullName,
       phone,
       avatar,
-      propertyName,
-      propertyType,
-      city,
-      propertyCity,
-      province,
-      district,
-      wardNumber,
-      streetAddress,
-      citizenshipNumber,
-      panNumber,
-      bankDetails,
     } = req.body;
 
     if (fullName) user.fullName = fullName.trim();
     if (phone) user.phone = phone.trim();
     if (avatar !== undefined) user.avatar = avatar;
 
-    if (propertyName !== undefined) user.propertyName = propertyName;
-    if (propertyType !== undefined) user.propertyType = propertyType;
-    if (city !== undefined) {
-      user.city = city;
-      user.propertyCity = city;
-    }
-    if (propertyCity !== undefined) {
-      user.propertyCity = propertyCity;
-      user.city = propertyCity;
-    }
-    if (province !== undefined) user.province = province;
-    if (district !== undefined) user.district = district;
-    if (wardNumber !== undefined) user.wardNumber = wardNumber;
-    if (streetAddress !== undefined) user.streetAddress = streetAddress;
-    if (citizenshipNumber !== undefined) user.citizenshipNumber = citizenshipNumber;
-    if (panNumber !== undefined) user.panNumber = panNumber;
-    if (bankDetails !== undefined) user.bankDetails = bankDetails;
 
     await user.save();
 
@@ -572,20 +482,14 @@ router.post('/forgot-password', async (req, res) => {
       ],
     });
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'No registered NepalStay account matches that email or mobile number.',
-      });
-    }
+    if (!user || !user.email) return res.json({ success: true, message: 'If the account supports email recovery, a reset code will be sent.' });
 
     // Generate 6-digit verification code
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetCode = randomInt(100000, 1000000).toString();
     user.resetPasswordCode = resetCode;
     user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins expiry
     await user.save();
 
-    console.log(`🔑 [NepalStay Password Reset] 6-Digit code for ${user.email || user.phone}: ${resetCode}`);
 
     // Attempt real email delivery via nodemailer/SMTP
     let emailStatus = { sent: false };
@@ -603,7 +507,7 @@ router.post('/forgot-password', async (req, res) => {
         ? (emailStatus.sent
             ? `A 6-digit verification code was sent to ${user.email}. Check your inbox or spam.`
             : `Verification code generated for ${user.email}.`)
-        : `Verification code generated for ${user.phone}.`,
+        : 'If the account supports email recovery, a reset code will be sent.',
       emailSent: emailStatus.sent,
     });
   } catch (error) {
@@ -664,10 +568,10 @@ router.post('/reset-password', async (req, res) => {
       });
     }
 
-    if (newPassword.length < 6) {
+    if (newPassword.length < 10) {
       return res.status(400).json({
         success: false,
-        error: 'New password must be at least 6 characters.',
+        error: 'New password must be at least 10 characters.',
       });
     }
 
@@ -717,7 +621,7 @@ router.post('/reset-password', async (req, res) => {
     user.resetPasswordExpires = null;
     await user.save();
 
-    console.log(`✓ Password successfully reset for user: ${user.email || user.phone}`);
+    
 
     return res.json({
       success: true,
