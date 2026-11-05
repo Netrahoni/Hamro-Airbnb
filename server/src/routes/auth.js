@@ -1,6 +1,7 @@
 import express from 'express';
 import { randomInt, randomBytes, createHash, timingSafeEqual } from 'node:crypto';
-import { User } from '../models/User.js';\nimport { VerificationCode } from '../models/VerificationCode.js';
+import { User } from '../models/User.js';
+import { VerificationCode } from '../models/VerificationCode.js';
 import { requireAuth, generateToken } from '../middleware/auth.js';
 import { OAuth2Client } from 'google-auth-library';
 import { sendPasswordResetEmail } from '../services/email.js';
@@ -61,7 +62,11 @@ router.post('/register', async (req, res) => {
     if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'Enter a valid email address.' });
     if (cleanPhone && normalizePhone(cleanPhone).length < 10) return res.status(400).json({ success: false, error: 'Enter a valid phone number.' });
 
-    if (typeof emailVerificationToken !== 'string' || emailVerificationToken.length < 32) return res.status(403).json({ success: false, error: 'Verify your email address before creating an account.' });\n    const verification = await VerificationCode.findOne({ email: cleanEmail, purpose: 'signup', verifiedAt: { $ne: null }, verificationTokenHash: createHash('sha256').update(emailVerificationToken).digest('hex'), expiresAt: { $gt: new Date() } });\n    if (!verification) return res.status(403).json({ success: false, error: 'Email verification has expired or is invalid. Request a new code.' });\n\n    // Check if user already exists
+    if (typeof emailVerificationToken !== 'string' || emailVerificationToken.length < 32) return res.status(403).json({ success: false, error: 'Verify your email address before creating an account.' });
+    const verification = await VerificationCode.findOne({ email: cleanEmail, purpose: 'signup', verifiedAt: { $ne: null }, verificationTokenHash: createHash('sha256').update(emailVerificationToken).digest('hex'), expiresAt: { $gt: new Date() } });
+    if (!verification) return res.status(403).json({ success: false, error: 'Email verification has expired or is invalid. Request a new code.' });
+
+    // Check if user already exists
     const queryConditions = [];
     if (cleanEmail) queryConditions.push({ email: cleanEmail });
     if (cleanPhone) {
