@@ -403,31 +403,62 @@ router.post('/forgot-password', async (req, res) => {
  */
 router.post('/send-verification-code', async (req, res) => {
   try {
-    const { email, phone, fullName } = req.body;
-    if (!email && !phone) {
-      return res.status(400).json({ success: false, error: 'Email or mobile number is required.' });
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const fullName = typeof req.body.fullName === 'string' ? req.body.fullName.trim().slice(0, 100) : 'Traveler';
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ success: false, error: 'A valid email address is required.' });
     }
-
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-    let emailStatus = { sent: false };
-    if (email) {
-      emailStatus = await sendPasswordResetEmail({
-        to: email.trim().toLowerCase(),
-        code,
-        name: fullName || 'Traveler',
-      });
+    if (await User.exists({ email })) {
+      return res.status(409).json({ success: false, error: 'An account already exists with this email address.' });
     }
-
-    res.json({
-      success: true,
-      emailSent: emailStatus.sent,
-      message: emailStatus.sent
-        ? `Verification code dispatched to ${email}.`
-        : `Verification code generated for ${email || phone}.`,
+    const existingCode = await VerificationCode.findOne({ email, purpose: 'signup', expiresAt: { $gt: new Date(Date.now() - 60 * 1000) } });
+    if (existingCode && existingCode.createdAt > new Date(Date.now() - 60 * 1000)) {
+      return res.status(429).json({ success: false, error: 'Please wait one minute before requesting another code.' });
+    }
+    const code = randomInt(100000, 1000000).toString();
+    await VerificationCode.deleteMany({ email, purpose: 'signup' });
+    const record = await VerificationCode.create({
+      email,
+      purpose: 'signup',
+      codeHash: createHash('sha256').update(code).digest('hex'),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
     });
+    const delivery = await sendPasswordResetEmail({ to: email, code, name: fullName, purpose: 'signup' });
+    if (!delivery.sent) {
+      await VerificationCode.deleteOne({ _id: record._id });
+      return res.status(503).json({ success: false, error: 'Email delivery is unavailable. Please try again later.' });
+    }
+    return res.json({ success: true, emailSent: true, message: 'A verification code has been sent to your email address.' });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    console.error('Signup verification delivery failed:', error);
+    return res.status(500).json({ success: false, error: 'Unable to send a verification code.' });
+  }
+});
+
+router.post('/verify-email-code', async (req, res) => {
+  try {
+    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+    const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
+    if (!email || !/^\d{6}$/.test(code)) return res.status(400).json({ success: false, error: 'Enter a valid email address and six-digit code.' });
+    const record = await VerificationCode.findOne({ email, purpose: 'signup', expiresAt: { $gt: new Date() } });
+    if (!record || record.verifiedAt || record.attempts >= 5) return res.status(400).json({ success: false, error: 'Verification code is invalid or expired. Request a new code.' });
+    const candidate = Buffer.from(createHash('sha256').update(code).digest('hex'));
+    const expected = Buffer.from(record.codeHash);
+    if (candidate.length !== expected.length || !timingSafeEqual(candidate, expected)) {
+      record.attempts += 1;
+      if (record.attempts >= 5) await VerificationCode.deleteOne({ _id: record._id });
+      else await record.save();
+      return res.status(400).json({ success: false, error: 'Verification code is incorrect.' });
+    }
+    const verificationToken = randomBytes(32).toString('hex');
+    record.verifiedAt = new Date();
+    record.verificationTokenHash = createHash('sha256').update(verificationToken).digest('hex');
+    record.attempts = 0;
+    await record.save();
+    return res.json({ success: true, verificationToken, message: 'Email verified successfully.' });
+  } catch (error) {
+    console.error('Email verification failed:', error);
+    return res.status(500).json({ success: false, error: 'Unable to verify email address.' });
   }
 });
 
