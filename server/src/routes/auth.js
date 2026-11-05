@@ -365,6 +365,7 @@ router.post('/forgot-password', async (req, res) => {
     const resetCode = randomInt(100000, 1000000).toString();
     user.resetPasswordCode = createHash('sha256').update(resetCode).digest('hex');
     user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins expiry
+    user.resetPasswordAttempts = 0;
     await user.save();
 
 
@@ -378,15 +379,13 @@ router.post('/forgot-password', async (req, res) => {
       });
     }
 
-    return res.json({
-      success: true,
-      message: user.email
-        ? (emailStatus.sent
-            ? `A 6-digit verification code was sent to ${user.email}. Check your inbox or spam.`
-            : 'If the account supports email recovery, a reset code will be sent.')
-        : 'If the account supports email recovery, a reset code will be sent.',
-      emailSent: emailStatus.sent,
-    });
+    if (!emailStatus.sent) {
+      user.resetPasswordCode = null;
+      user.resetPasswordExpires = null;
+      user.resetPasswordAttempts = 0;
+      await user.save();
+    }
+    return res.json({ success: true, message: 'If an account matches, a password reset code will be sent.' });
   } catch (error) {
     console.error('Forgot password error:', error);
     return res.status(500).json({
@@ -471,7 +470,7 @@ router.post('/reset-password', async (req, res) => {
       });
     }
 
-    if (!user.resetPasswordCode || !user.resetPasswordExpires) {
+    if (!user.resetPasswordCode || !user.resetPasswordExpires || user.resetPasswordAttempts >= 5) {
       return res.status(400).json({
         success: false,
         error: 'No active password reset request. Please request a new code.',
@@ -486,6 +485,12 @@ router.post('/reset-password', async (req, res) => {
     }
 
     if (user.resetPasswordCode !== createHash('sha256').update(cleanCode).digest('hex')) {
+      user.resetPasswordAttempts = (user.resetPasswordAttempts || 0) + 1;
+      if (user.resetPasswordAttempts >= 5) {
+        user.resetPasswordCode = null;
+        user.resetPasswordExpires = null;
+      }
+      await user.save();
       return res.status(400).json({
         success: false,
         error: 'Invalid verification code. Please check the 6-digit code and try again.',
@@ -496,6 +501,7 @@ router.post('/reset-password', async (req, res) => {
     user.password = newPassword;
     user.resetPasswordCode = null;
     user.resetPasswordExpires = null;
+    user.resetPasswordAttempts = 0;
     await user.save();
 
     return res.json({
