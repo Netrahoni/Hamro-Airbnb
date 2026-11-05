@@ -42,9 +42,9 @@ function verifyAdminTotp(code, secret) {
       ((digest[offset + 2] & 0xff) << 8) |
       (digest[offset + 3] & 0xff);
     const expected = String(binary % 1000000).padStart(6, '0');
-    if (timingSafeEqual(Buffer.from(String(code)), Buffer.from(expected))) return true;
+    if (timingSafeEqual(Buffer.from(String(code)), Buffer.from(expected))) return counter + window;
   }
-  return false;
+  return null;
 }
 
 
@@ -241,6 +241,7 @@ router.post('/login', async (req, res) => {
 
     user.failedLoginAttempts = 0;
     user.lockUntil = null;
+    user.lastTotpCounter = matchedTotpCounter;
     user.lastLogin = new Date();
     user.lastIp = req.ip || '';
     await user.save();
@@ -359,8 +360,8 @@ router.post('/admin/login', async (req, res) => {
     if (user.lockUntil && user.lockUntil > new Date()) return res.status(429).json({ success: false, error: 'Too many failed attempts. Try again in 15 minutes.' });
 
     const passwordMatches = await user.comparePassword(password);
-    const totpMatches = passwordMatches && verifyAdminTotp(totpCode, process.env.ADMIN_TOTP_SECRET);
-    if (!passwordMatches || !totpMatches) {
+    const matchedTotpCounter = passwordMatches ? verifyAdminTotp(totpCode, process.env.ADMIN_TOTP_SECRET) : null;
+    if (!passwordMatches || matchedTotpCounter === null || matchedTotpCounter <= (user.lastTotpCounter ?? -1)) {
       user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
       if (user.failedLoginAttempts >= 5) {
         user.failedLoginAttempts = 0;
