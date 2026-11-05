@@ -59,7 +59,7 @@ router.post('/register', async (req, res) => {
     if (typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, error: 'Password must be between 10 and 128 characters.' });
     const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
     const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
-    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'Enter a valid email address.' });
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'A valid, verified email address is required.' });
     if (cleanPhone && normalizePhone(cleanPhone).length < 10) return res.status(400).json({ success: false, error: 'Enter a valid phone number.' });
 
     if (typeof emailVerificationToken !== 'string' || emailVerificationToken.length < 32) return res.status(403).json({ success: false, error: 'Verify your email address before creating an account.' });
