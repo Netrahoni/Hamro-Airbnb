@@ -115,8 +115,9 @@ router.post('/register', async (req, res) => {
       lastIp: req.ip || '',
     });
 
+    const consumedVerification = await VerificationCode.findOneAndDelete({ _id: verification._id, verificationTokenHash: createHash('sha256').update(emailVerificationToken).digest('hex'), verifiedAt: { $ne: null }, expiresAt: { $gt: new Date() } });
+    if (!consumedVerification) return res.status(403).json({ success: false, error: 'Email verification token has already been used or expired.' });
     await newUser.save();
-    await VerificationCode.deleteOne({ _id: verification._id });
     const token = generateToken(newUser);
 
     return res.status(201).json({
