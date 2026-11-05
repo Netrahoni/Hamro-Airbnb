@@ -148,12 +148,6 @@ export const api = {
       district: input.district,
       wardNumber: input.wardNumber,
       streetAddress: input.streetAddress,
-      citizenshipNumber: input.citizenshipNumber,
-      panNumber: input.panNumber,
-      bankName: input.bankName,
-      accountName: input.accountName,
-      accountNumber: input.accountNumber,
-      branch: input.branch,
       emailVerificationToken: input.emailVerificationToken,
     };
 
