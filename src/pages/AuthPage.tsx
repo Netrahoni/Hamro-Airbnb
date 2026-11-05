@@ -1119,7 +1119,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                   {hostStep === 5 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Lock size={16} /> Security & Room Capacity
+                        <Lock size={16} /> Secure Host Account
                       </div>
                       <p className="muted" style={{ fontSize: '11px', lineHeight: 1.6 }}>Your host account will be created after email verification. Add room inventory, nightly rates and property photos later from the Host Dashboard.</p>
                       <label className="form-label">
