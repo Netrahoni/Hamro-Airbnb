@@ -1,5 +1,5 @@
 import express from 'express';
-import { randomInt } from 'node:crypto';
+import { randomInt, createHash } from 'node:crypto';
 import { User } from '../models/User.js';
 import { requireAuth, generateToken } from '../middleware/auth.js';
 import { OAuth2Client } from 'google-auth-library';
@@ -11,8 +11,6 @@ function normalizePhone(str = '') {
   const digits = str.replace(/\D/g, '');
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
-
-function isAdminEmail() { return false; }
 
 /**
  * GET /api/auth/config
@@ -247,8 +245,6 @@ router.post('/google', async (req, res) => {
     const cleanEmail = email.trim().toLowerCase();
     let user = await User.findOne({ email: cleanEmail });
 
-    const isSystemAdmin = false;
-
     if (user) {
       if (user.status === 'suspended') {
         return res.status(403).json({
@@ -303,114 +299,8 @@ router.post('/google', async (req, res) => {
  * POST /api/auth/admin/login
  * Secure Administrator login with Staff ID or Admin Gmail + Password + 2FA TOTP code
  */
-router.post('/admin/login', async (req, res) => {
+router.post('/admin/login', (req, res) => {
   return res.status(503).json({ success: false, error: 'Administrator login is disabled until server-side TOTP verification is configured. Admin roles must be assigned through a trusted administrative process.' });
-  try {
-    const { staffIdOrEmail, password, totpCode } = req.body;
-
-    if (!staffIdOrEmail || !password) {
-      return res.status(400).json({
-        success: false,
-        error: 'Admin email/Staff ID and master password are required.',
-      });
-    }
-
-    const cleanIdentifier = staffIdOrEmail.trim().toLowerCase();
-    const phoneLast10 = normalizePhone(cleanIdentifier);
-
-    let user = await User.findOne({
-      $or: [
-        { email: cleanIdentifier },
-        { phone: cleanIdentifier },
-        ...(phoneLast10.length >= 10 ? [{ phone: new RegExp(`${phoneLast10}$`) }] : []),
-      ],
-    });
-
-    const isDesignatedAdmin = isAdminEmail(cleanIdentifier);
-
-    // If user doesn't exist yet, but their email matches ADMIN_GMAIL in .env, auto-initialize admin account!
-    if (!user && isDesignatedAdmin) {
-      user = new User({
-        fullName: 'Platform Superadmin',
-        email: cleanIdentifier,
-        role: 'admin',
-        authProvider: 'email',
-        password,
-        securityClearance: 'Platform Superadmin (Primary Admin Gmail)',
-        twoFactorEnabled: true,
-        status: 'active',
-      });
-      await user.save();
-    }
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'No administrator account associated with this email or Staff ID.',
-      });
-    }
-
-    // Verify role or designated admin status
-    if (isDesignatedAdmin) {
-      user.role = 'admin';
-      user.status = 'active';
-      user.securityClearance = 'Platform Superadmin (Primary Admin Gmail)';
-    } else if (user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        error: 'Access restricted: account lacks platform administrator privileges.',
-      });
-    }
-
-    if (user.status === 'suspended') {
-      return res.status(403).json({
-        success: false,
-        error: 'Administrator credentials suspended. Contact Platform Security.',
-      });
-    }
-
-    // Verify Password
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        error: 'Invalid master administration password.',
-      });
-    }
-
-    // Verify TOTP 2FA code (must be 6 digits)
-    const cleanTotp = (totpCode || '').trim();
-    if (!cleanTotp || cleanTotp.length !== 6 || !/^\d{6}$/.test(cleanTotp)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please enter a valid 6-digit TOTP security token code.',
-      });
-    }
-
-    if (isDesignatedAdmin && user.role !== 'admin') {
-      user.role = 'admin';
-      user.securityClearance = 'Platform Superadmin (Primary Admin Gmail)';
-    }
-
-    user.lastLogin = new Date();
-    user.lastIp = `${req.ip || '103.10.28.14'} (Secure Admin Session)`;
-    await user.save();
-
-    const token = generateToken(user);
-
-    return res.json({
-      success: true,
-      message: 'Admin authorization granted.',
-      token,
-      user: user.toJSON(),
-    });
-  } catch (error) {
-    console.error('Admin login error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Server error occurred during admin authentication.',
-    });
-  }
 });
 
 /**
@@ -486,7 +376,7 @@ router.post('/forgot-password', async (req, res) => {
 
     // Generate 6-digit verification code
     const resetCode = randomInt(100000, 1000000).toString();
-    user.resetPasswordCode = resetCode;
+    user.resetPasswordCode = createHash('sha256').update(resetCode).digest('hex');
     user.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 mins expiry
     await user.save();
 
@@ -506,7 +396,7 @@ router.post('/forgot-password', async (req, res) => {
       message: user.email
         ? (emailStatus.sent
             ? `A 6-digit verification code was sent to ${user.email}. Check your inbox or spam.`
-            : `Verification code generated for ${user.email}.`)
+            : 'If the account supports email recovery, a reset code will be sent.')
         : 'If the account supports email recovery, a reset code will be sent.',
       emailSent: emailStatus.sent,
     });
@@ -608,7 +498,7 @@ router.post('/reset-password', async (req, res) => {
       });
     }
 
-    if (user.resetPasswordCode !== cleanCode) {
+    if (user.resetPasswordCode !== createHash('sha256').update(cleanCode).digest('hex')) {
       return res.status(400).json({
         success: false,
         error: 'Invalid verification code. Please check the 6-digit code and try again.',
@@ -620,8 +510,6 @@ router.post('/reset-password', async (req, res) => {
     user.resetPasswordCode = null;
     user.resetPasswordExpires = null;
     await user.save();
-
-    
 
     return res.json({
       success: true,
