@@ -119,6 +119,10 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    resetPasswordAttempts: {
+      type: Number,
+      default: 0,
+    },
     lastLogin: {
       type: Date,
       default: Date.now,
@@ -165,6 +169,12 @@ userSchema.methods.toJSON = function () {
   delete obj.password;
   delete obj.resetPasswordCode;
   delete obj.resetPasswordExpires;
+  delete obj.resetPasswordAttempts;
+  delete obj.citizenshipNumber;
+  delete obj.panNumber;
+  delete obj.bankDetails;
+  delete obj.securityClearance;
+  delete obj.lastIp;
   obj.id = obj._id.toString();
   if (!obj.propertyCity && obj.city) {
     obj.propertyCity = obj.city;
