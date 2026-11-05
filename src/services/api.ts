@@ -154,6 +154,7 @@ export const api = {
       accountName: input.accountName,
       accountNumber: input.accountNumber,
       branch: input.branch,
+      emailVerificationToken: input.emailVerificationToken,
     };
 
     const res = await request<{ user: User; token: string }>('/api/auth/register', {
