@@ -75,6 +75,8 @@ export async function optionalAuth(req, res, next) {
     req.user = user;
     return next();
   } catch {
-    return res.status(401).json({ success: false, error: 'Invalid authentication token.' });
+    // Public resources remain accessible when a browser has an expired/stale token.
+    req.user = undefined;
+    return next();
   }
 }
