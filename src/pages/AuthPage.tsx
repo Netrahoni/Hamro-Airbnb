@@ -88,6 +88,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [guestPhone, setGuestPhone] = useState('+977 98');
   const [guestPassword, setGuestPassword] = useState('');
   const [showOtpModal, setShowOtpModal] = useState(false);
+  const [pendingSignupRole, setPendingSignupRole] = useState<'guest' | 'owner'>('guest');
   const [otpCode, setOtpCode] = useState('');
   const [signupOtpMsg, setSignupOtpMsg] = useState('');
 
@@ -282,7 +283,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     }
   };
 
-  // Guest Registration with Email & Phone Verification
+  // Guest registration starts with a server-issued email verification code.
   const handleGuestSignupStart = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -290,77 +291,76 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       setError('Please fill in all required registration fields.');
       return;
     }
-
     setIsLoading(true);
-    const res = await api.sendVerificationCode({
-      email: guestEmail.trim(),
-      phone: guestPhone.trim(),
-      fullName: guestName.trim(),
-    });
+    const res = await api.sendVerificationCode({ email: guestEmail.trim(), fullName: guestName.trim() });
     setIsLoading(false);
-
-    if (res.success) {
-      setSignupOtpMsg(
-        res.data?.emailSent
-          ? `✓ A 6-digit code was sent to ${guestEmail}. Check your inbox or spam folder.`
-          : `Verification code sent. Check your inbox.`
-      );
-      setShowOtpModal(true);
-    } else {
-      setShowOtpModal(true);
+    if (!res.success) {
+      setError(res.error || 'Unable to send the verification code.');
+      return;
     }
+    setPendingSignupRole('guest');
+    setOtpCode('');
+    setSignupOtpMsg(`A six-digit verification code was sent to ${guestEmail}. It expires in 10 minutes.`);
+    setShowOtpModal(true);
   };
 
   const handleGuestSignupComplete = async () => {
-    if (otpCode.length < 6) {
-      setError('Please enter the 6-digit verification code.');
+    if (!/^\d{6}$/.test(otpCode)) {
+      setError('Please enter the six-digit verification code.');
       return;
     }
-
     setIsLoading(true);
-    const res = await register({
-      fullName: guestName,
-      email: guestEmail,
-      phone: guestPhone,
-      password: guestPassword,
-      role: 'guest',
-    });
+    setError(null);
+    const email = pendingSignupRole === 'guest' ? guestEmail.trim() : hostData.email.trim();
+    const verification = await api.verifyEmailCode(email, otpCode);
+    if (!verification.success || !verification.data?.verificationToken) {
+      setIsLoading(false);
+      setError(verification.error || 'Email verification failed. Request a new code.');
+      return;
+    }
+    const result = pendingSignupRole === 'guest'
+      ? await register({
+          fullName: guestName,
+          email: guestEmail,
+          phone: guestPhone,
+          password: guestPassword,
+          role: 'guest',
+          emailVerificationToken: verification.data.verificationToken,
+        })
+      : await registerHost({ ...hostData, emailVerificationToken: verification.data.verificationToken });
     setIsLoading(false);
-
-    if (res.success) {
+    if (result.success) {
       setShowOtpModal(false);
-      setSuccessMsg('Account registered successfully! Redirecting...');
-      setTimeout(() => handleRedirect('guest'), 600);
+      setSuccessMsg(pendingSignupRole === 'guest' ? 'Account registered successfully! Redirecting...' : 'Host partner application submitted! Welcome to your host dashboard.');
+      setTimeout(() => handleRedirect(pendingSignupRole), 700);
     } else {
-      setError(res.error || 'Registration failed.');
+      setError(result.error || 'Registration failed.');
     }
   };
 
-  // Host Registration Submit
+  // Host registration also requires verified email before the account is created.
   const handleHostRegisterSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-
     if (!hostData.fullName.trim() || !hostData.email.trim() || !hostData.password) {
       setError('Please fill in your primary contact and host security credentials.');
       return;
     }
-
     if (!hostData.propertyName.trim() || !hostData.panNumber.trim() || !hostData.accountNumber.trim()) {
       setError('Please fill in all mandatory legal, tax, and banking details.');
       return;
     }
-
     setIsLoading(true);
-    const res = await registerHost(hostData);
+    const res = await api.sendVerificationCode({ email: hostData.email.trim(), fullName: hostData.fullName.trim() });
     setIsLoading(false);
-
-    if (res.success) {
-      setSuccessMsg('Host partner application submitted! Welcome to your host dashboard.');
-      setTimeout(() => handleRedirect('owner'), 800);
-    } else {
-      setError(res.error || 'Host partner registration failed.');
+    if (!res.success) {
+      setError(res.error || 'Unable to send the verification code.');
+      return;
     }
+    setPendingSignupRole('owner');
+    setOtpCode('');
+    setSignupOtpMsg(`A six-digit verification code was sent to ${hostData.email}. It expires in 10 minutes.`);
+    setShowOtpModal(true);
   };
 
   // Forgot Password Handlers
