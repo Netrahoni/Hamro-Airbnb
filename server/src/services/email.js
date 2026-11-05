@@ -69,14 +69,14 @@ export async function sendPasswordResetEmail({ to, code, name, purpose = 'passwo
         <div class="tag">Security Verification</div>
         <h1>${isSignup ? 'Email Verification Code' : 'Password Reset Code'}</h1>
         <p>Namaste <strong>${recipientName}</strong>,</p>
-        <p>{isSignup ? 'Use this 6-digit code to verify your email address and complete your NepalStay registration:' : 'We received a request to reset the password for your NepalStay account. Use the 6-digit verification code below to authorize this change:'}</p>
+        <p>${isSignup ? 'Use this 6-digit code to verify your email address and complete your NepalStay registration:' : 'We received a request to reset the password for your NepalStay account. Use the 6-digit verification code below to authorize this change:'}</p>
         
         <div class="code-box">
           <div class="code-digits">${code}</div>
           <div class="expiry-note">⏱️ Valid for ${isSignup ? '10' : '15'} minutes only</div>
         </div>
 
-        <p>If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged and your account remains secure.</p>
+        <p>${isSignup ? 'If you did not request this verification code, you can ignore this email.' : 'If you did not request a password reset, you can safely ignore this email. Your password will remain unchanged and your account remains secure.'}</p>
         
         <div class="warning">
           <strong>Security Tip:</strong> Never share this code with anyone. NepalStay staff will never ask for your verification code or password.
