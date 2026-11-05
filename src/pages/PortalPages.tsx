@@ -277,7 +277,7 @@ export function AdminPage() {
   const [moderationError, setModerationError] = useState('');
   const [moderationBusyId, setModerationBusyId] = useState('');
 
-  const { users, updateUserStatus, updateUserKyc } = useAuth();
+  const { users, updateUserStatus } = useAuth();
 
   const loadModerationProperties = async () => {
     setModerationLoading(true);
@@ -414,7 +414,7 @@ export function AdminPage() {
                         )}
                         {user.role === 'admin' && (
                           <div style={{ fontSize: '10px', color: '#2b6e4f', fontWeight: 600, marginTop: '2px' }}>
-                            2FA Secured · {user.securityClearance || 'Superadmin'}
+                            Server-side TOTP required
                           </div>
                         )}
                       </td>
@@ -524,37 +524,14 @@ export function AdminPage() {
                         <div style={{ fontSize: '10px', color: '#8995a5' }}>{host.phone}</div>
                       </td>
                       <td>
-                        <span style={{ fontSize: '11px' }}>Citizenship · Ward Rec · PAN</span>
+                        <span style={{ fontSize: '11px', color: '#8995a5' }}>Secure document upload is not enabled</span>
                       </td>
                       <td>
                         <Badge tone={host.kycStatus === 'approved' ? 'green' : host.kycStatus === 'pending' ? 'amber' : 'rose'}>
                           {host.kycStatus || 'pending'}
                         </Badge>
                       </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          {host.kycStatus !== 'approved' && (
-                            <button
-                              type="button"
-                              className="button button-dark"
-                              style={{ fontSize: '10px', padding: '4px 8px' }}
-                              onClick={() => updateUserKyc(host.id, 'approved')}
-                            >
-                              Approve
-                            </button>
-                          )}
-                          {host.kycStatus !== 'correction' && (
-                            <button
-                              type="button"
-                              className="button button-outline"
-                              style={{ fontSize: '10px', padding: '4px 8px' }}
-                              onClick={() => updateUserKyc(host.id, 'correction')}
-                            >
-                              Correction
-                            </button>
-                          )}
-                        </div>
-                      </td>
+                      <td><Badge tone="amber">Review disabled</Badge></td>
                     </tr>
                   ))}
                 </tbody>
