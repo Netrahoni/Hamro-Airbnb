@@ -1,7 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { Property } from '../models/Property.js';
-import { requireAuth, requireHost } from '../middleware/auth.js';
+import { requireAuth, requireHost, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 const PROPERTY_TYPES = ['Homestay', 'Boutique Hotel', 'Eco Lodge', 'Resort', 'Traditional House'];
@@ -86,20 +86,13 @@ router.get('/mine', requireAuth, requireHost, async (req, res) => {
 });
 
 // Detail route is public for active listings; owners/admins may preview their own unpublished listings.
-router.get('/:id', async (req, res) => {
+router.get('/:id', optionalAuth, async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ success: false, error: 'Invalid property ID.' });
     const property = await Property.findById(req.params.id);
     if (!property) return res.status(404).json({ success: false, error: 'Property not found.' });
-    if (property.status !== 'active') {
-      const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-      if (!token) return res.status(404).json({ success: false, error: 'Property not found.' });
-      const { default: jwt } = await import('jsonwebtoken');
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'], issuer: 'nepalstay-api', audience: 'nepalstay-client' });
-        const user = await (await import('../models/User.js')).User.findById(decoded.id);
-        if (!user || (user.role !== 'admin' && property.host.toString() !== user._id.toString())) return res.status(404).json({ success: false, error: 'Property not found.' });
-      } catch { return res.status(404).json({ success: false, error: 'Property not found.' }); }
+    if (property.status !== 'active' && (!req.user || !canManage(property, req.user))) {
+      return res.status(404).json({ success: false, error: 'Property not found.' });
     }
     return res.json({ success: true, property: property.toJSON() });
   } catch {
