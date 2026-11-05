@@ -1,6 +1,7 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import { Property } from '../models/Property.js';
+import { User } from '../models/User.js';
 import { requireAuth, requireHost, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -143,6 +144,10 @@ router.patch('/:id/status', requireAuth, requireHost, async (req, res) => {
     const { status } = req.body;
     const allowed = req.user.role === 'admin' ? ['active', 'paused', 'unlisted', 'draft', 'pending_approval'] : ['paused', 'unlisted', 'draft', 'pending_approval'];
     if (!allowed.includes(status)) return res.status(400).json({ success: false, error: 'Invalid listing status or insufficient permission to publish.' });
+    if (status === 'active') {
+      const host = await User.findById(property.host);
+      if (!host || host.kycStatus !== 'approved') return res.status(403).json({ success: false, error: 'Host identity verification must be approved before publishing this listing.' });
+    }
     if (status === 'pending_approval' && (!property.title || !property.location?.city || !property.pricePerNight || !property.description)) return res.status(400).json({ success: false, error: 'Complete the title, location, nightly price and description before submitting.' });
     property.status = status;
     await property.save();
