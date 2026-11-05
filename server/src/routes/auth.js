@@ -28,7 +28,7 @@ function decodeBase32Secret(secret) {
 }
 
 function verifyAdminTotp(code, secret) {
-  if (!/^\d{6}$/.test(String(code || '')) || !secret) return false;
+  if (!/^\d{6}$/.test(String(code || '')) || !secret) return null;
   const key = decodeBase32Secret(secret);
   if (!key.length) return false;
   const counter = Math.floor(Date.now() / 30000);
