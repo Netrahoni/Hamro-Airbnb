@@ -396,8 +396,8 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       return;
     }
 
-    if (!forgotNewPassword || forgotNewPassword.length < 6) {
-      setForgotError('New password must be at least 6 characters.');
+    if (!forgotNewPassword || forgotNewPassword.length < 10) {
+      setForgotError('New password must be at least 10 characters.');
       return;
     }
 
