@@ -13,6 +13,7 @@ export type HostProperty = {
   _id?: string;
   id: string;
   title: string;
+  hostName?: string;
   tagline?: string;
   propertyType: string;
   location: { city: string; province?: string; district?: string; wardNumber?: string; streetAddress?: string };
