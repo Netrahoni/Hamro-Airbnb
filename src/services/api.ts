@@ -8,6 +8,26 @@ import type {
   UserStatus,
 } from '../types/auth';
 
+
+export type HostProperty = {
+  _id?: string;
+  id: string;
+  title: string;
+  tagline?: string;
+  propertyType: string;
+  location: { city: string; province?: string; district?: string; wardNumber?: string; streetAddress?: string };
+  pricePerNight: number;
+  description?: string;
+  images?: string[];
+  amenities?: string[];
+  bedrooms?: number;
+  bathrooms?: number;
+  maxGuests?: number;
+  status: 'draft' | 'active' | 'pending_approval' | 'paused' | 'unlisted';
+};
+
+export type HostPropertyInput = Omit<HostProperty, 'id' | '_id' | 'status'> & { status?: string };
+
 const TOKEN_KEY = 'ns_jwt_token';
 
 // In production (Vercel), VITE_API_URL points to the deployed backend.
@@ -194,6 +214,28 @@ export const api = {
     return request<{ message: string }>('/api/auth/logout', {
       method: 'POST',
     });
+  },
+
+
+  // Host property management
+  async getHostProperties() {
+    return request<{ properties: HostProperty[]; count: number }>('/api/properties/mine');
+  },
+
+  async createHostProperty(input: HostPropertyInput) {
+    return request<{ property: HostProperty }>('/api/properties', { method: 'POST', body: JSON.stringify(input) });
+  },
+
+  async updateHostProperty(id: string, input: HostPropertyInput) {
+    return request<{ property: HostProperty }>(`/api/properties/${id}`, { method: 'PUT', body: JSON.stringify(input) });
+  },
+
+  async updateHostPropertyStatus(id: string, status: string) {
+    return request<{ property: HostProperty }>(`/api/properties/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  },
+
+  async removeHostProperty(id: string) {
+    return request<{ message: string }>(`/api/properties/${id}`, { method: 'DELETE' });
   },
 
   // Admin User Management
