@@ -1,17 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import {
-  CalendarDays,
   CheckCircle2,
-  ClipboardCheck,
   Download,
-  Filter,
   MoreHorizontal,
   Search,
   ShieldAlert,
   Sparkles,
   TrendingUp,
   Users,
-  Wallet,
   UserCheck,
   UserX,
   Plus,
@@ -28,14 +24,6 @@ import type { UserStatus } from '../types/auth';
 import { api, type HostProperty, type HostPropertyInput } from '../services/api';
 
 export { default as AuthPage } from './AuthPage';
-
-const ownerConfig: Record<string, { title: string; subtitle: string; eyebrow: string; stats: [string,string,string][]; rows: [string,string,string,string][] }> = {
-  '/owner/dashboard': { title: 'Good morning, Pine Hill.', subtitle: 'Here is what is happening with your property today.', eyebrow: 'OWNER OVERVIEW', stats: [['Upcoming arrivals','08','+2 from yesterday'],['Occupancy this week','76%','Across 12 rooms'],['Cash expected today','रु 24,600','4 reservations'],['Monthly commission','रु 18,400','10% platform rate']], rows: [['NP-KTM-2048','Anisha Thapa','Today · 2 nights','Confirmed'],['NP-PKR-1992','Samir Gurung','Today · 1 night','Awaiting arrival'],['NP-PKR-1870','Emily Carter','Tomorrow · 3 nights','Confirmed']] },
-  '/owner/reservations': { title: 'Reservations', subtitle: 'Manage guest arrivals, check-ins and cash collection.', eyebrow: 'GUEST OPERATIONS', stats: [['Today','4','Arrivals'],['Upcoming','12','Next 7 days'],['Checked in','3','Today'],['Needs attention','1','Review']], rows: [['NP-PKR-2048','Anisha Thapa','Today · 2 guests','Confirmed'],['NP-PKR-1992','Samir Gurung','Today · 1 guest','Awaiting arrival'],['NP-PKR-1870','Emily Carter','Tomorrow · 2 guests','Confirmed']] },
-  '/owner/calendar': { title: 'Calendar & rates', subtitle: 'Keep availability and nightly rates up to date.', eyebrow: 'INVENTORY MANAGEMENT', stats: [['Room types','4','Configured'],['Available tonight','8','Of 12 rooms'],['Blocked dates','2','Manual blocks'],['Rate updates','3','This month']], rows: [['Deluxe double','4 units','रु 6,800 / night','Available'],['Garden suite','2 units','रु 8,200 / night','Available'],['Family room','2 units','रु 9,400 / night','Limited']] },
-  '/owner/listings': { title: 'Your listings', subtitle: 'Manage the details guests see before they book.', eyebrow: 'PROPERTY MANAGEMENT', stats: [['Published listings','1','Visible to guests'],['Room types','4','Across this property'],['Listing completeness','92%','Great progress'],['Verification','Verified','Documents approved']], rows: [['Pine Hill Homestay','Pokhara · Kaskikot','12 rooms','Published']] },
-  '/owner/finances': { title: 'Finances', subtitle: 'Track cash collected and settle your platform commission.', eyebrow: 'EARNINGS & SETTLEMENTS', stats: [['Gross COD collected','रु 246,000','This month'],['Platform commission','रु 24,600','10% platform fee'],['Settled','रु 18,400','This month'],['Outstanding','रु 6,200','Due for settlement']], rows: [['INV-2026-10','October 2026','रु 18,400','Settled'],['INV-2026-11','November 2026','रु 6,200','Awaiting receipt']] },
-};
 
 const adminConfig: Record<string, { title: string; subtitle: string; eyebrow: string; stats: [string,string,string][]; rows: [string,string,string,string][] }> = {
   '/admin/dashboard': { title: 'Platform overview', subtitle: 'A clear view of marketplace activity and operational health.', eyebrow: 'ADMIN OVERVIEW', stats: [['Active properties','42','Kathmandu & Pokhara'],['Bookings this month','318','Live Q4 total'],['Pending owner KYC','7','Needs review'],['Risk alerts','3','Open review alerts']], rows: [['KYC-081','Pine Hill Homestay','Owner verification','Pending'],['RSK-019','Booking NP-PKR-1992','Booking risk review','Review'],['INV-204','Thamel Design Hotel','Commission receipt','Pending']] },
@@ -101,48 +89,6 @@ function ModelPanel({ admin }: { admin: boolean }) {
       </div>
     </div>
   );
-}
-
-function WizardPage({ path }: { path: string }) {
-  const steps = [
-    ['/owner/register/account','01','Account','Owner details and +977 phone verification'],
-    ['/owner/register/location','02','Location','Property type, city and map pin'],
-    ['/owner/register/kyc','03','Legal KYC','Citizenship, PAN, VAT and local documents'],
-    ['/owner/register/inventory','04','Room inventory','Room types, rates, amenities and photos'],
-    ['/owner/register/policies','05','COD policies','Cancellation terms and commission agreement'],
-  ];
-  const active = Math.max(0, steps.findIndex((item)=>item[0]===path));
-  const { updateProfile } = useAuth();
-  const [formName,setFormName]=useState('');
-  const [propertyType,setPropertyType]=useState('Homestay');
-  const [city,setCity]=useState('Pokhara');
-  const [citizenshipFile, setCitizenshipFile] = useState<string | null>(null);
-  const [panFile, setPanFile] = useState<string | null>(null);
-  const [done,setDone]=useState(false);
-  const current=steps[active];
-
-  const handleSubmit = () => {
-    updateProfile({
-      propertyName: formName || 'My Himalayan Stay',
-      propertyCity: city,
-      propertyType: propertyType,
-      kycStatus: 'pending',
-    });
-    setDone(true);
-  };
-
-  return <div className="wizard-page"><SectionHeading eyebrow="PROPERTY ONBOARDING" title="Bring your property to NepalStay." description="Complete these five steps to submit your property for review."/><div className="wizard-progress">{steps.map((step,index)=><Link to={step[0]} key={step[0]} className={`wizard-step ${index===active?'active':''} ${index<active?'complete':''}`}><span>{index<active?'✓':step[1]}</span><div><strong>{step[2]}</strong><small>{step[3]}</small></div></Link>)}</div><div className="wizard-form-card"><div className="eyebrow">STEP {current[1]} OF 05</div><h2>{current[2]}</h2><p className="muted">{current[3]}.</p>{done?<div className="success-inline" style={{ padding: '20px', borderRadius: '10px', background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', display: 'flex', flexDirection: 'column', gap: '10px' }}><div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}><CheckCircle2 size={20}/> Property registration submitted successfully!</div><p style={{ margin: 0, fontSize: '13px', color: '#385543' }}>Our local verification officers will review your documents within 24 hours. You can now manage your property inventory in your Host Workspace.</p><Link to="/owner/dashboard" className="button button-dark" style={{ alignSelf: 'flex-start', marginTop: '6px' }}>Go to Host Dashboard</Link></div>:<><label className="form-label">{active===0?'Owner full name':active===1?'Property name':active===2?'Property legal entity name':active===3?'Room type name':'Property display name'}<input value={formName} onChange={(e)=>setFormName(e.target.value)} placeholder={active===0?'Enter your full legal name':active===1?'e.g. Annapurna Panorama Homestay':'Enter name'}/></label>{active===1&&<><label className="form-label">Property category<select value={propertyType} onChange={(e)=>setPropertyType(e.target.value)}><option>Homestay</option><option>Guest house</option><option>Tourist hotel</option><option>Boutique resort</option></select></label><label className="form-label">City destination<select value={city} onChange={(e)=>setCity(e.target.value)}><option>Pokhara</option><option>Kathmandu</option><option>Chitwan</option><option>Nagarkot</option></select></label></>}{active===2&&<div style={{ display: 'flex', flexDirection: 'column', gap: '14px', margin: '14px 0' }}>
-    <label className="form-label">
-      <span>Citizenship / Passport (Front & Back)</span>
-      <input type="file" accept="image/*,.pdf" onChange={(e) => setCitizenshipFile(e.target.files?.[0]?.name || 'citizenship.pdf')} style={{ padding: '8px', border: '1px dashed #b7c4bd', background: '#fafbf9' }} />
-      {citizenshipFile && <span style={{ fontSize: '11px', color: '#2b6e4f', fontWeight: 600 }}>✓ Attached: {citizenshipFile}</span>}
-    </label>
-    <label className="form-label">
-      <span>Ward Recommendation / PAN Certificate</span>
-      <input type="file" accept="image/*,.pdf" onChange={(e) => setPanFile(e.target.files?.[0]?.name || 'pan_certificate.pdf')} style={{ padding: '8px', border: '1px dashed #b7c4bd', background: '#fafbf9' }} />
-      {panFile && <span style={{ fontSize: '11px', color: '#2b6e4f', fontWeight: 600 }}>✓ Attached: {panFile}</span>}
-    </label>
-  </div>}{active===3&&<><label className="form-label">Nightly rate (NPR)<input type="number" placeholder="e.g. 5500"/></label><label className="form-label">Available units<input type="number" placeholder="e.g. 6"/></label></>}{active===4&&<label className="form-label">Cash on Arrival (COD) hold cutoff time<select><option>6:00 PM</option><option>5:00 PM</option><option>7:00 PM</option><option>Guaranteed all-night hold</option></select></label>}<div className="wizard-actions"><Link to={active===0?'/owner/dashboard':steps[active-1][0]} className="button button-outline">Back</Link>{active<4?<Link to={steps[active+1][0]} className="button button-dark">Save & continue</Link>:<button className="button button-dark" onClick={handleSubmit}>Submit for review</button>}</div></>}</div></div>;
 }
 
 type ListingFormState = {
