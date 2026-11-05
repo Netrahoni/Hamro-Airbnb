@@ -69,7 +69,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     adminLogin,
     forgotPassword,
     resetPassword,
-    adminGmail,
   } = useAuth();
 
   const [activeRole, setActiveRole] = useState<UserRole>(roleParam || 'guest');
@@ -171,46 +170,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     });
   }, []);
 
-  // Real Google OAuth: Process Access Token (OAuth2 popup)
-  const processGoogleAccessToken = async (accessToken: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) {
-        throw new Error('Failed to retrieve user profile from Google.');
-      }
-      const profile = await res.json();
-      const email = (profile.email as string) || '';
-      const name = (profile.name as string) || (profile.given_name as string) || email.split('@')[0] || 'Traveler';
-      const avatarUrl = (profile.picture as string) || undefined;
-      const googleId = (profile.sub as string) || undefined;
-
-      if (!email) {
-        throw new Error('Google did not return an email address.');
-      }
-
-      const authRes = await loginWithGoogle(
-        { name, email, avatarUrl, googleId },
-        accessToken
-      );
-
-      if (authRes.success) {
-        const isDesignatedAdmin = adminGmail && email.trim().toLowerCase() === adminGmail.trim().toLowerCase();
-        handleRedirect(isDesignatedAdmin ? 'admin' : (authRes.user?.role || 'guest'));
-      } else {
-        setError(authRes.error || 'Google authentication failed.');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error during Google sign-in.';
-      setError(msg);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   // Real Google OAuth: Process ID Token (One-Tap / Credential JWT)
   const processGoogleIdToken = async (idToken: string) => {
     setIsLoading(true);
@@ -232,8 +191,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       );
 
       if (res.success) {
-        const isDesignatedAdmin = adminGmail && email.trim().toLowerCase() === adminGmail.trim().toLowerCase();
-        handleRedirect(isDesignatedAdmin ? 'admin' : (res.user?.role || 'guest'));
+        handleRedirect(res.user?.role || 'guest');
       } else {
         setError(res.error || 'Google sign-in failed.');
       }
@@ -298,42 +256,9 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     };
   }, [googleClientId, activeRole, isSignup]);
 
-  // Click handler for fallback button
+  // The fallback is informational only. Authentication is accepted exclusively through Google's signed ID credential.
   const handleGoogleAuthClick = () => {
-    setError(null);
-    if (!googleClientId) {
-      setError('Connecting to Google services... Please wait a moment and try again.');
-      return;
-    }
-
-    const google = (window as unknown as { google?: { accounts?: { oauth2?: { initTokenClient: (cfg: unknown) => { requestAccessToken: (opts?: unknown) => void } } } } }).google;
-
-    if (google?.accounts?.oauth2) {
-      try {
-        const client = google.accounts.oauth2.initTokenClient({
-          client_id: googleClientId,
-          scope: 'openid email profile',
-          callback: async (response: { access_token?: string; error?: string }) => {
-            if (response?.error) {
-              if (response.error === 'popup_closed_by_user') return;
-              setError(`Google Sign-In notice: ${response.error}. Ensure your current URL is in Google Cloud Console's Authorized JavaScript Origins.`);
-              return;
-            }
-            if (response?.access_token) {
-              await processGoogleAccessToken(response.access_token);
-            }
-          },
-        });
-        client.requestAccessToken({ prompt: 'select_account' });
-        return;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Google OAuth error';
-        setError(msg);
-        return;
-      }
-    }
-
-    setError('Google Sign-In is initializing. Please wait a moment.');
+    setError('Secure Google Sign-In is still loading. Please wait for the official Google button to appear.');
   };
 
   // Standard Login Submit
