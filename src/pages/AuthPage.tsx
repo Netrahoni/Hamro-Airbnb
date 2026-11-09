@@ -56,7 +56,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [guestPhone, setGuestPhone] = useState('');
   const [guestPassword, setGuestPassword] = useState('');
   // Host Registration Multi-Step Wizard States
-  const [hostStep, setHostStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [hostData, setHostData] = useState<HostRegisterInput>({
     username: '',
     fullName: '',
