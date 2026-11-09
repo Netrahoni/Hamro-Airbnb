@@ -78,49 +78,73 @@ router.post('/', requireAuth, async (req, res) => {
     if (typeof specialRequests !== 'string' || specialRequests.length > 1000) return res.status(400).json({ success: false, error: 'Special requests must be 1,000 characters or fewer.' });
     if (!req.user.email) return res.status(400).json({ success: false, error: 'Add an email address to your account before booking.' });
 
-    const property = await Property.findById(propertyId);
-    if (!property || property.status !== 'active') return res.status(404).json({ success: false, error: 'This property is not available for booking.' });
-    if (guestCount > property.maxGuests) return res.status(400).json({ success: false, error: `This property allows up to ${property.maxGuests} guests.` });
-    const host = await User.findById(property.host).select('status kycStatus');
-    if (!host || host.status !== 'active' || host.kycStatus !== 'approved') return res.status(409).json({ success: false, error: 'This property is temporarily unavailable.' });
+    // A short, atomic property lock serializes availability checks and inserts for the same property.
+    const lockToken = randomBytes(16).toString('hex');
+    const now = new Date();
+    const property = await Property.findOneAndUpdate(
+      {
+        _id: propertyId,
+        status: 'active',
+        $or: [{ bookingLockUntil: null }, { bookingLockUntil: { $lt: now } }],
+      },
+      { $set: { bookingLockToken: lockToken, bookingLockUntil: new Date(now.getTime() + 30_000) } },
+      { new: true }
+    ).select('+bookingLockToken +bookingLockUntil');
+    if (!property) return res.status(409).json({ success: false, error: 'This property is unavailable or another reservation is being confirmed. Please retry.' });
 
-    const conflict = await Booking.exists({
-      property: property._id,
-      bookingStatus: { $in: ['confirmed', 'completed'] },
-      checkIn: { $lt: checkOut },
-      checkOut: { $gt: checkIn },
-    });
-    if (conflict) return res.status(409).json({ success: false, error: 'Those dates are no longer available. Choose different dates.' });
+    let booking;
+    try {
+      if (guestCount > property.maxGuests) return res.status(400).json({ success: false, error: `This property allows up to ${property.maxGuests} guests.` });
+      const host = await User.findById(property.host).select('status kycStatus');
+      if (!host || host.status !== 'active' || host.kycStatus !== 'approved') return res.status(409).json({ success: false, error: 'This property is temporarily unavailable.' });
 
-    const nightlyRate = Math.round(property.pricePerNight);
-    const subtotal = nightlyRate * nights;
-    const serviceFee = Math.round(subtotal * SERVICE_FEE_RATE);
-    const booking = await Booking.create({
-      bookingReference: makeBookingReference(property.location.city),
-      guest: req.user._id,
-      guestName: req.user.fullName,
-      guestEmail: req.user.email,
-      guestPhone: guestPhone.trim(),
-      property: property._id,
-      host: property.host,
-      propertyTitle: property.title,
-      propertyCity: property.location.city,
-      propertyImage: property.images?.[0] || '',
-      hostName: property.hostName,
-      checkIn,
-      checkOut,
-      nights,
-      guests: guestCount,
-      nightlyRate,
-      subtotal,
-      serviceFee,
-      totalAmount: subtotal + serviceFee,
-      currency: 'NPR',
-      paymentMethod: 'pay_at_property',
-      paymentStatus: 'pending',
-      bookingStatus: 'confirmed',
-      specialRequests: specialRequests.trim(),
-    });
+      const conflict = await Booking.exists({
+        property: property._id,
+        bookingStatus: { $in: ['confirmed', 'completed'] },
+        checkIn: { $lt: checkOut },
+        checkOut: { $gt: checkIn },
+      });
+      if (conflict) return res.status(409).json({ success: false, error: 'Those dates are no longer available. Choose different dates.' });
+
+      const nightlyRate = Math.round(property.pricePerNight);
+      const subtotal = nightlyRate * nights;
+      const serviceFee = Math.round(subtotal * SERVICE_FEE_RATE);
+      booking = await Booking.create({
+        bookingReference: makeBookingReference(property.location.city),
+        guest: req.user._id,
+        guestName: req.user.fullName,
+        guestEmail: req.user.email,
+        guestPhone: guestPhone.trim(),
+        property: property._id,
+        host: property.host,
+        propertyTitle: property.title,
+        propertyCity: property.location.city,
+        propertyImage: property.images?.[0] || '',
+        hostName: property.hostName,
+        checkIn,
+        checkOut,
+        nights,
+        guests: guestCount,
+        nightlyRate,
+        subtotal,
+        serviceFee,
+        totalAmount: subtotal + serviceFee,
+        currency: 'NPR',
+        paymentMethod: 'pay_at_property',
+        paymentStatus: 'pending',
+        bookingStatus: 'confirmed',
+        specialRequests: specialRequests.trim(),
+      });
+    } finally {
+      try {
+        await Property.updateOne(
+          { _id: property._id, bookingLockToken: lockToken },
+          { $unset: { bookingLockToken: 1, bookingLockUntil: 1 } }
+        );
+      } catch (releaseError) {
+        console.error('Property booking lock release failed:', releaseError.message);
+      }
+    }
     return res.status(201).json({ success: true, message: 'Reservation confirmed.', booking: booking.toJSON() });
   } catch (error) {
     if (error?.code === 11000) return res.status(409).json({ success: false, error: 'Please retry your booking.' });
