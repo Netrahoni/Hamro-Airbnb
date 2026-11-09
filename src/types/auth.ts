@@ -15,6 +15,7 @@ export interface BankDetails {
 
 export interface User {
   id: string;
+  username?: string;
   fullName: string;
   email: string;
   phone: string;
@@ -53,7 +54,7 @@ export interface RegisterInput {
 
 export interface HostRegisterInput {
   username: string;
-  fullName: string;
+  fullName?: string;
   email?: string;
   phone?: string;
   password: string;
