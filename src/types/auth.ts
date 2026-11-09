@@ -48,7 +48,6 @@ export interface RegisterInput {
   propertyName?: string;
   propertyCity?: string;
   propertyType?: string;
-  emailVerificationToken?: string;
 }
 
 export interface HostRegisterInput {
