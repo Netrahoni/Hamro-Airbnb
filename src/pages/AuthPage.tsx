@@ -181,11 +181,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       setError('Please choose a username and password.');
       return;
     }
-    if (!hostData.propertyName.trim() || !hostData.city.trim()) {
-      setError('Please provide your property name and city.');
-      return;
-    }
-
 
     setIsLoading(true);
     const result = await registerHost(hostData);
@@ -626,350 +621,53 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
         {/* ============================================================== */}
         {activeRole === 'owner' && (
           <div>
-            <div className="eyebrow" style={{ color: '#17372f' }}>
-              HOST & PARTNER NETWORK
-            </div>
-            <h1 style={{ fontSize: '26px' }}>{isSignup ? 'Partner with NepalStay' : 'Host Portal Sign In'}</h1>
+            <div className="eyebrow" style={{ color: '#17372f' }}>HOST & PARTNER NETWORK</div>
+            <h1 style={{ fontSize: '26px' }}>{isSignup ? 'Create your host account' : 'Host Portal Sign In'}</h1>
             <p className="muted" style={{ fontSize: '13px', marginBottom: '20px' }}>
               {isSignup
-                ? 'Register your property, homestay, or boutique hotel in Nepal and connect with travelers worldwide.'
-                : 'Access your reservations, guest communications, pricing, and payout dashboard.'}
+                ? 'Create an account with a username and password. You can add your property details later from the Host Dashboard.'
+                : 'Sign in with your host username and password to manage your property and reservations.'}
             </p>
-
             {!isSignup ? (
-              /* HOST SIGN IN */
               <form onSubmit={handleLoginSubmit}>
                 <label className="form-label">
                   <span>Host Username</span>
-                  <input
-                    type="text"
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="Enter your host username"
-                    required
-                  />
+                  <input type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value.toLowerCase())} placeholder="Enter your host username" autoComplete="username" required />
                 </label>
-
-                <label className="form-label" style={{ position: 'relative' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Host Password</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForgotIdentifier(identifier);
-                        setForgotError(null);
-                        setForgotSuccessMsg(null);
-                        setForgotStep('request');
-                        setShowForgotPasswordModal(true);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: 0,
-                        fontSize: '11px',
-                        color: '#17372f',
-                        cursor: 'pointer',
-                        fontWeight: 600,
-                      }}
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter host password"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{
-                        position: 'absolute',
-                        right: '12px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: '#8995a5',
-                      }}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
+                <label className="form-label">
+                  <span>Host Password</span>
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" required />
                 </label>
-
                 <button type="submit" className="button button-dark button-full" disabled={isLoading} style={{ padding: '13px', marginTop: '10px' }}>
                   {isLoading ? 'Signing in...' : 'Sign In to Host Dashboard'}
                 </button>
-
                 <div className="auth-switch" style={{ marginTop: '18px' }}>
                   Want to host your property on NepalStay?{' '}
-                  <a
-                    href="#register-host"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setIsSignup(true);
-                      setHostStep(1);
-                      setError(null);
-                    }}
-                    style={{ fontWeight: 700, color: '#17372f' }}
-                  >
-                    Start Host Registration
+                  <a href="#register-host" onClick={(e) => { e.preventDefault(); setIsSignup(true); setError(null); }} style={{ fontWeight: 700, color: '#17372f' }}>
+                    Create a host account
                   </a>
                 </div>
               </form>
             ) : (
-              /* HOST REGISTRATION STEP-BY-STEP WIZARD */
-              <div>
-                {/* Wizard Step Progress */}
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '20px' }}>
-                  {[1, 2, 3, 4, 5].map((step) => (
-                    <div
-                      key={step}
-                      style={{
-                        flex: 1,
-                        height: '4px',
-                        borderRadius: '2px',
-                        background: hostStep >= step ? '#17372f' : '#eaede7',
-                        transition: 'background 0.2s ease',
-                      }}
-                    />
-                  ))}
-                </div>
-
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '14px' }}>
-                  STEP {hostStep} OF 5: {
-                    hostStep === 1 ? 'Primary Contact' :
-                    hostStep === 2 ? 'Property Profile' :
-                    hostStep === 3 ? 'Nepali Legal & Tax Verification' :
-                    hostStep === 4 ? 'Banking & Direct Payouts' :
-                    'Capacity & Security'
-                  }
-                </div>
-
-                <form onSubmit={hostStep === 5 ? handleHostRegisterSubmit : (e) => { e.preventDefault(); setHostStep((prev) => Math.min(5, prev + 1) as any); }}>
-                  {/* Step 1: Host Personal Details */}
-                  {hostStep === 1 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <label className="form-label">
-                        <span>Full Name (optional)</span>
-                        <input
-                          type="text"
-                          value={hostData.fullName}
-                          onChange={(e) => setHostData({ ...hostData, fullName: e.target.value })}
-                          placeholder="Your Full Name"
-                        />
-                      </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label className="form-label">
-                          <span>Personal or Business Gmail</span>
-                          <input
-                            type="email"
-                            value={hostData.email}
-                            onChange={(e) => {
-                              setHostData({ ...hostData, email: e.target.value });
-                            }}
-                            placeholder="yourstay@gmail.com"
-                          />
-                        </label>
-                        <label className="form-label">
-                          <span>Mobile Phone (optional)</span>
-                          <input
-                            type="tel"
-                            value={hostData.phone}
-                            onChange={(e) => setHostData({ ...hostData, phone: e.target.value })}
-                            placeholder="+977 98XXXXXXXX"
-                          />
-                        </label>
-                      </div>
-                      <label className="form-label">
-                        <span>Username</span>
-                        <input type="text" value={hostData.username} onChange={(e) => setHostData({ ...hostData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24) })} placeholder="Choose a host username" minLength={3} maxLength={24} required />
-                      </label>
-                      <button
-                        type="button"
-                        className="button button-dark"
-                        style={{ marginTop: '10px' }}
-                        onClick={() => {
-                          if (!hostData.username.trim()) {
-                            setError('Please choose a username before continuing.');
-                            return;
-                          }
-                          setError(null);
-                          setHostStep(2);
-                        }}
-                      >
-                        Continue to Property Details <ArrowRight size={16} />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Step 2: Property Identity */}
-                  {hostStep === 2 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <label className="form-label">
-                        <span>Property / Homestay Name</span>
-                        <input
-                          type="text"
-                          value={hostData.propertyName}
-                          onChange={(e) => setHostData({ ...hostData, propertyName: e.target.value })}
-                          placeholder="e.g. Annapurna Panorama Homestay"
-                          required
-                        />
-                      </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label className="form-label">
-                          <span>Property Category</span>
-                          <select
-                            value={hostData.propertyType}
-                            onChange={(e) => setHostData({ ...hostData, propertyType: e.target.value })}
-                          >
-                            <option value="Homestay">Community Homestay</option>
-                            <option value="Boutique Hotel">Boutique Hotel</option>
-                            <option value="Eco Lodge">Eco Lodge</option>
-                            <option value="Resort">Resort & Retreat</option>
-                            <option value="Traditional House">Heritage House</option>
-                          </select>
-                        </label>
-                        <label className="form-label">
-                          <span>City / Municipality</span>
-                          <input
-                            type="text"
-                            value={hostData.city}
-                            onChange={(e) => setHostData({ ...hostData, city: e.target.value })}
-                            placeholder="e.g. Pokhara"
-                            required
-                          />
-                        </label>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label className="form-label">
-                          <span>District</span>
-                          <input
-                            type="text"
-                            value={hostData.district}
-                            onChange={(e) => setHostData({ ...hostData, district: e.target.value })}
-                            placeholder="e.g. Kaski"
-                            required
-                          />
-                        </label>
-                        <label className="form-label">
-                          <span>Ward & Street</span>
-                          <input
-                            type="text"
-                            value={hostData.streetAddress}
-                            onChange={(e) => setHostData({ ...hostData, streetAddress: e.target.value })}
-                            placeholder="e.g. Ward 6, Lakeside"
-                            required
-                          />
-                        </label>
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(1)}>
-                          Back
-                        </button>
-                        <button
-                          type="button"
-                          className="button button-dark"
-                          style={{ flex: 1 }}
-                          onClick={() => {
-                            if (!hostData.propertyName.trim() || !hostData.city.trim()) {
-                              setError('Please provide your property name and city.');
-                              return;
-                            }
-                            setError(null);
-                            setHostStep(3);
-                          }}
-                        >
-                          Continue to Legal Compliance <ArrowRight size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 3: KYC is deferred until secure document handling is available. */}
-                  {hostStep === 3 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <FileCheck size={16} /> Identity & Tax Verification
-                      </div>
-                      <div className="demo-callout">
-                        <ShieldCheck size={17}/>
-                        <span>We will request citizenship, PAN and supporting documents through a secure verification workflow after your account is created. Do not enter or upload identity numbers on this registration screen.</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(2)}>Back</button>
-                        <button type="button" className="button button-dark" style={{ flex: 1 }} onClick={() => setHostStep(4)}>Continue to Payout Setup <ArrowRight size={16}/></button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 4: Payout information is collected only after secure onboarding is available. */}
-                  {hostStep === 4 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Landmark size={16}/> Payout Settlement
-                      </div>
-                      <div className="demo-callout">
-                        <ShieldCheck size={17}/>
-                        <span>Bank account and payout details are not collected during signup. You can add them later when the secure host payout workflow is enabled.</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(3)}>Back</button>
-                        <button type="button" className="button button-dark" style={{ flex: 1 }} onClick={() => setHostStep(5)}>Continue to Final Step <ArrowRight size={16}/></button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 5: Capacity & Security */}
-                  {hostStep === 5 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Lock size={16} /> Secure Host Account
-                      </div>
-                      <p className="muted" style={{ fontSize: '11px', lineHeight: 1.6 }}>Create a host account with your username and password. Add room inventory, nightly rates and property photos later from the Host Dashboard.</p>
-                      <label className="form-label">
-                        <span>Host Account Password</span>
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          value={hostData.password}
-                          onChange={(e) => setHostData({ ...hostData, password: e.target.value })}
-                          placeholder="Min 8 characters"
-                          minLength={8}
-                          required
-                        />
-                      </label>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(4)}>
-                          Back
-                        </button>
-                        <button type="submit" className="button button-dark" style={{ flex: 1 }} disabled={isLoading}>
-                          {isLoading ? 'Connecting to Database...' : 'Complete Host Registration'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </form>
-
-                <div className="auth-switch" style={{ marginTop: '20px' }}>
+              <form onSubmit={handleHostRegisterSubmit}>
+                <label className="form-label">
+                  <span>Username</span>
+                  <input type="text" value={hostData.username} onChange={(e) => setHostData({ ...hostData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24) })} placeholder="Choose a host username" minLength={3} maxLength={24} autoComplete="username" required />
+                </label>
+                <label className="form-label">
+                  <span>Password</span>
+                  <input type={showPassword ? 'text' : 'password'} value={hostData.password} onChange={(e) => setHostData({ ...hostData, password: e.target.value })} placeholder="At least 8 characters" minLength={8} autoComplete="new-password" required />
+                </label>
+                <button type="submit" className="button button-dark button-full" disabled={isLoading} style={{ padding: '13px', marginTop: '10px' }}>
+                  {isLoading ? 'Creating account...' : 'Create Host Account'} <ArrowRight size={16} />
+                </button>
+                <div className="auth-switch" style={{ marginTop: '18px' }}>
                   Already registered as a host?{' '}
-                  <a
-                    href="#login"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setIsSignup(false);
-                      setError(null);
-                    }}
-                    style={{ fontWeight: 700, color: '#17372f' }}
-                  >
+                  <a href="#login" onClick={(e) => { e.preventDefault(); setIsSignup(false); setError(null); }} style={{ fontWeight: 700, color: '#17372f' }}>
                     Host Sign In
                   </a>
                 </div>
-              </div>
+              </form>
             )}
           </div>
         )}
