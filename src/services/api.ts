@@ -165,10 +165,10 @@ export const api = {
   },
 
   // Auth Operations
-  async login(identifier: string, password: string, role?: UserRole) {
+  async login(username: string, password: string, role?: UserRole) {
     const res = await request<{ user: User; token: string }>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ identifier, password, role }),
+      body: JSON.stringify({ username, password, role }),
     });
     if (res.success && res.data?.token) {
       setStoredToken(res.data.token);
