@@ -5,7 +5,6 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronRight,
-  Clock3,
   Heart,
   MapPin,
   Settings,
