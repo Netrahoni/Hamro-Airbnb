@@ -50,7 +50,7 @@ export default function BookingPage() {
   const subtotal = property ? property.pricePerNight * nights : 0;
   const serviceFee = Math.round(subtotal * 0.05);
   const total = subtotal + serviceFee;
-  const validPhone = phone.replace(/\\D/g, '').length >= 10;
+  const validPhone = phone.replace(/\D/g, '').length >= 10;
   const canBook = isAuthenticated && currentUser?.role === 'guest';
   const returnTo = `/book/${listingId}${window.location.search}`;
   const loginUrl = `/login?redirect=${encodeURIComponent(returnTo)}`;
