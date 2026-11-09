@@ -92,6 +92,8 @@ const propertySchema = new mongoose.Schema(
       enum: ['draft', 'active', 'pending_approval', 'paused', 'unlisted'],
       default: 'draft',
     },
+    bookingLockToken: { type: String, default: '', select: false },
+    bookingLockUntil: { type: Date, default: null, select: false },
     featured: {
       type: Boolean,
       default: false,
@@ -104,6 +106,8 @@ const propertySchema = new mongoose.Schema(
 
 propertySchema.methods.toJSON = function () {
   const obj = this.toObject();
+  delete obj.bookingLockToken;
+  delete obj.bookingLockUntil;
   obj.id = obj._id.toString();
   return obj;
 };
