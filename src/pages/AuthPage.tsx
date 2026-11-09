@@ -86,7 +86,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [guestEmail, setGuestEmail] = useState('');
   const [guestPhone, setGuestPhone] = useState('+977 98');
   const [guestPassword, setGuestPassword] = useState('');
-  const [otpCode, setOtpCode] = useState('');
 
   // Host Registration Multi-Step Wizard States
   const [hostStep, setHostStep] = useState<1 | 2 | 3 | 4 | 5>(1);
