@@ -10,7 +10,6 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
-  Smartphone,
   CheckCircle2,
   AlertCircle,
   ArrowRight,
@@ -87,10 +86,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [guestEmail, setGuestEmail] = useState('');
   const [guestPhone, setGuestPhone] = useState('+977 98');
   const [guestPassword, setGuestPassword] = useState('');
-  const [showOtpModal, setShowOtpModal] = useState(false);
-  const [pendingSignupRole, setPendingSignupRole] = useState<'guest' | 'owner'>('guest');
   const [otpCode, setOtpCode] = useState('');
-  const [signupOtpMsg, setSignupOtpMsg] = useState('');
 
   // Host Registration Multi-Step Wizard States
   const [hostStep, setHostStep] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -283,7 +279,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     }
   };
 
-  // Guest registration starts with a server-issued email verification code.
+  // Guest registration uses the standard email and password flow.
   const handleGuestSignupStart = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -291,54 +287,26 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       setError('Please fill in all required registration fields.');
       return;
     }
-    setIsLoading(true);
-    const res = await api.sendVerificationCode({ email: guestEmail.trim(), fullName: guestName.trim() });
-    setIsLoading(false);
-    if (!res.success) {
-      setError(res.error || 'Unable to send the verification code.');
-      return;
-    }
-    setPendingSignupRole('guest');
-    setOtpCode('');
-    setSignupOtpMsg(`A six-digit verification code was sent to ${guestEmail}. It expires in 10 minutes.`);
-    setShowOtpModal(true);
-  };
 
-  const handleGuestSignupComplete = async () => {
-    if (!/^\d{6}$/.test(otpCode)) {
-      setError('Please enter the six-digit verification code.');
-      return;
-    }
     setIsLoading(true);
-    setError(null);
-    const email = pendingSignupRole === 'guest' ? guestEmail.trim() : hostData.email.trim();
-    const verification = await api.verifyEmailCode(email, otpCode);
-    if (!verification.success || !verification.data?.verificationToken) {
-      setIsLoading(false);
-      setError(verification.error || 'Email verification failed. Request a new code.');
-      return;
-    }
-    const result = pendingSignupRole === 'guest'
-      ? await register({
-          fullName: guestName,
-          email: guestEmail,
-          phone: guestPhone,
-          password: guestPassword,
-          role: 'guest',
-          emailVerificationToken: verification.data.verificationToken,
-        })
-      : await registerHost({ ...hostData, emailVerificationToken: verification.data.verificationToken });
+    const result = await register({
+      fullName: guestName.trim(),
+      email: guestEmail.trim(),
+      phone: guestPhone.trim(),
+      password: guestPassword,
+      role: 'guest',
+    });
     setIsLoading(false);
+
     if (result.success) {
-      setShowOtpModal(false);
-      setSuccessMsg(pendingSignupRole === 'guest' ? 'Account registered successfully! Redirecting...' : 'Host partner application submitted! Welcome to your host dashboard.');
-      setTimeout(() => handleRedirect(pendingSignupRole), 700);
+      setSuccessMsg('Account registered successfully! Redirecting...');
+      setTimeout(() => handleRedirect('guest'), 700);
     } else {
       setError(result.error || 'Registration failed.');
     }
   };
 
-  // Host registration also requires verified email before the account is created.
+  // Host registration also uses the standard email and password flow.
   const handleHostRegisterSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -350,17 +318,17 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       setError('Please provide your property name and city.');
       return;
     }
+
     setIsLoading(true);
-    const res = await api.sendVerificationCode({ email: hostData.email.trim(), fullName: hostData.fullName.trim() });
+    const result = await registerHost(hostData);
     setIsLoading(false);
-    if (!res.success) {
-      setError(res.error || 'Unable to send the verification code.');
-      return;
+
+    if (result.success) {
+      setSuccessMsg('Host partner application submitted! Welcome to your host dashboard.');
+      setTimeout(() => handleRedirect('owner'), 700);
+    } else {
+      setError(result.error || 'Registration failed.');
     }
-    setPendingSignupRole('owner');
-    setOtpCode('');
-    setSignupOtpMsg(`A six-digit verification code was sent to ${hostData.email}. It expires in 10 minutes.`);
-    setShowOtpModal(true);
   };
 
   // Forgot Password Handlers
@@ -768,8 +736,8 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                       type={showPassword ? 'text' : 'password'}
                       value={guestPassword}
                       onChange={(e) => setGuestPassword(e.target.value)}
-                      placeholder="At least 6 characters"
-                      minLength={6}
+                      placeholder="At least 10 characters"
+                      minLength={10}
                       required
                     />
                     <button
@@ -792,7 +760,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                 </label>
 
                 <button type="submit" className="button button-dark button-full" style={{ padding: '13px', marginTop: '10px' }}>
-                  Verify Mobile & Register Account <ArrowRight size={16} />
+                  Create Account <ArrowRight size={16} />
                 </button>
 
                 <div className="auth-switch" style={{ marginTop: '18px' }}>
@@ -1121,15 +1089,15 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                       <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <Lock size={16} /> Secure Host Account
                       </div>
-                      <p className="muted" style={{ fontSize: '11px', lineHeight: 1.6 }}>Your host account will be created after email verification. Add room inventory, nightly rates and property photos later from the Host Dashboard.</p>
+                      <p className="muted" style={{ fontSize: '11px', lineHeight: 1.6 }}>Create a host account with your email and password. Add room inventory, nightly rates and property photos later from the Host Dashboard.</p>
                       <label className="form-label">
                         <span>Host Account Password</span>
                         <input
                           type={showPassword ? 'text' : 'password'}
                           value={hostData.password}
                           onChange={(e) => setHostData({ ...hostData, password: e.target.value })}
-                          placeholder="Min 6 characters"
-                          minLength={6}
+                          placeholder="Min 10 characters"
+                          minLength={10}
                           required
                         />
                       </label>
@@ -1304,105 +1272,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       </div>
 
 
-      {/* SMS OTP Modal for Mobile Registration */}
-      {showOtpModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(16, 35, 29, 0.65)',
-            backdropFilter: 'blur(4px)',
-            display: 'grid',
-            placeItems: 'center',
-            zIndex: 1000,
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: '16px',
-              padding: '28px',
-              maxWidth: '420px',
-              width: '100%',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
-              border: '1px solid #eaede7',
-              textAlign: 'center',
-            }}
-          >
-            <div
-              style={{
-                width: '52px',
-                height: '52px',
-                borderRadius: '50%',
-                background: '#e9f2ee',
-                color: '#17372f',
-                display: 'grid',
-                placeItems: 'center',
-                margin: '0 auto 16px',
-              }}
-            >
-              <Smartphone size={26} />
-            </div>
-            <div className="eyebrow" style={{ color: '#17372f' }}>
-              SECURITY VERIFICATION
-            </div>
-            <h2 style={{ fontSize: '22px', margin: '6px 0 8px' }}>Verify your account</h2>
-            <p className="muted" style={{ fontSize: '13px', marginBottom: '16px' }}>
-              Enter the 6-digit verification code sent to <strong>{guestEmail || guestPhone}</strong>.
-            </p>
-
-            {signupOtpMsg && (
-              <div
-                style={{
-                  padding: '8px 12px',
-                  background: '#f0fdf4',
-                  border: '1px solid #bbf7d0',
-                  borderRadius: '8px',
-                  fontSize: '11px',
-                  color: '#166534',
-                  marginBottom: '14px',
-                }}
-              >
-                {signupOtpMsg}
-              </div>
-            )}
-
-            <label className="form-label" style={{ textAlign: 'left' }}>
-              <span>6-Digit Verification Code</span>
-              <input
-                type="text"
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value)}
-                placeholder="e.g. 123456"
-                maxLength={6}
-                style={{ textAlign: 'center', fontSize: '20px', letterSpacing: '6px', fontWeight: 700 }}
-              />
-            </label>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                type="button"
-                className="button button-outline"
-                style={{ flex: 1 }}
-                onClick={() => setShowOtpModal(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="button button-dark"
-                style={{ flex: 1 }}
-                onClick={handleGuestSignupComplete}
-                disabled={isLoading}
-              >
-                {isLoading ? 'Verifying...' : 'Verify & Continue'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Forgot Password Modal */}
       {showForgotPasswordModal && (
         <div
@@ -1556,8 +1425,8 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                     type="password"
                     value={forgotNewPassword}
                     onChange={(e) => setForgotNewPassword(e.target.value)}
-                    placeholder="At least 6 characters"
-                    minLength={6}
+                    placeholder="At least 10 characters"
+                    minLength={10}
                     required
                   />
                 </label>
@@ -1569,7 +1438,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                     value={forgotConfirmPassword}
                     onChange={(e) => setForgotConfirmPassword(e.target.value)}
                     placeholder="Re-enter new password"
-                    minLength={6}
+                    minLength={10}
                     required
                   />
                 </label>
