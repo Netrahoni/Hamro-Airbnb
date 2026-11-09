@@ -18,7 +18,6 @@ interface AuthContextType {
   isLoading: boolean;
   isBackendConnected: boolean;
   login: (identifier: string, password: string, role?: UserRole) => Promise<{ success: boolean; error?: string }>;
-  loginWithGoogle: (profile: { name: string; email: string; avatarUrl?: string; googleId?: string }, token?: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   register: (input: RegisterInput) => Promise<{ success: boolean; error?: string }>;
   registerHost: (input: HostRegisterInput) => Promise<{ success: boolean; error?: string }>;
   adminLogin: (input: AdminLoginInput) => Promise<{ success: boolean; error?: string }>;
@@ -213,7 +212,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isBackendConnected,
         login,
-        loginWithGoogle,
         register,
         registerHost,
         adminLogin,
