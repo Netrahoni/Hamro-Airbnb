@@ -45,6 +45,7 @@ export interface RegisterInput {
   phone: string;
   password: string;
   role: UserRole;
+  verificationToken: string;
   propertyName?: string;
   propertyCity?: string;
   propertyType?: string;

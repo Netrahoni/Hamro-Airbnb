@@ -20,7 +20,7 @@ interface AuthContextType {
   login: (identifier: string, password: string, role?: UserRole) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: (profile: { name: string; email: string; avatarUrl?: string; googleId?: string }, token?: string) => Promise<{ success: boolean; error?: string; user?: User }>;
   register: (input: RegisterInput) => Promise<{ success: boolean; error?: string }>;
-  registerHost: (input: HostRegisterInput) => Promise<{ success: boolean; error?: string }>;
+  registerHost: (input: HostRegisterInput, verificationToken: string) => Promise<{ success: boolean; error?: string }>;
   adminLogin: (input: AdminLoginInput) => Promise<{ success: boolean; error?: string }>;
   forgotPassword: (identifier: string) => Promise<{ success: boolean; message?: string; devCode?: string; error?: string }>;
   resetPassword: (identifier: string, code: string, newPassword: string) => Promise<{ success: boolean; message?: string; error?: string }>;
@@ -138,8 +138,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: false, error: res.error || 'Registration failed. Please try again.' };
   };
 
-  const registerHost = async (input: HostRegisterInput): Promise<{ success: boolean; error?: string }> => {
-    const res = await api.registerHost(input);
+  const registerHost = async (input: HostRegisterInput, verificationToken: string): Promise<{ success: boolean; error?: string }> => {
+    const res = await api.registerHost(input, verificationToken);
     if (res.success && res.data?.user) {
       setCurrentUser(res.data.user);
       return { success: true };

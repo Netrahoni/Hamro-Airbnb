@@ -86,6 +86,45 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [guestEmail, setGuestEmail] = useState('');
   const [guestPhone, setGuestPhone] = useState('+977 98');
   const [guestPassword, setGuestPassword] = useState('');
+  const [emailVerificationCode, setEmailVerificationCode] = useState('');
+  const [emailVerificationToken, setEmailVerificationToken] = useState('');
+  const [emailCodeSent, setEmailCodeSent] = useState(false);
+
+  const sendSignupVerificationCode = async (email: string, fullName: string) => {
+    setError(null);
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Enter a valid email address before requesting a verification code.');
+      return;
+    }
+    setIsLoading(true);
+    const result = await api.sendVerificationCode(email.trim(), fullName.trim() || 'Traveler');
+    setIsLoading(false);
+    if (result.success) {
+      setEmailCodeSent(true);
+      setEmailVerificationToken('');
+      setEmailVerificationCode('');
+      setSuccessMsg('Verification code sent. Check your inbox and spam folder.');
+    } else {
+      setError(result.error || 'Could not send the verification code.');
+    }
+  };
+
+  const verifySignupEmailCode = async (email: string) => {
+    setError(null);
+    if (!/^\d{6}$/.test(emailVerificationCode.trim())) {
+      setError('Enter the six-digit code sent to your email.');
+      return;
+    }
+    setIsLoading(true);
+    const result = await api.verifyEmailCode(email.trim(), emailVerificationCode.trim());
+    setIsLoading(false);
+    if (result.success && result.data?.verificationToken) {
+      setEmailVerificationToken(result.data.verificationToken);
+      setSuccessMsg('Email verified successfully. You can continue registration.');
+    } else {
+      setError(result.error || 'Email verification failed. Request a new code.');
+    }
+  };
 
   // Host Registration Multi-Step Wizard States
   const [hostStep, setHostStep] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -287,6 +326,11 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       return;
     }
 
+    if (!emailVerificationToken) {
+      setError('Verify your email address before creating your traveler account.');
+      return;
+    }
+
     setIsLoading(true);
     const result = await register({
       fullName: guestName.trim(),
@@ -294,6 +338,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       phone: guestPhone.trim(),
       password: guestPassword,
       role: 'guest',
+      verificationToken: emailVerificationToken,
     });
     setIsLoading(false);
 
@@ -318,8 +363,13 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
       return;
     }
 
+    if (!emailVerificationToken) {
+      setError('Verify your email address before completing host registration.');
+      return;
+    }
+
     setIsLoading(true);
-    const result = await registerHost(hostData);
+    const result = await registerHost(hostData, emailVerificationToken);
     setIsLoading(false);
 
     if (result.success) {
@@ -711,7 +761,12 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                     <input
                       type="email"
                       value={guestEmail}
-                      onChange={(e) => setGuestEmail(e.target.value)}
+                      onChange={(e) => {
+                        setGuestEmail(e.target.value);
+                        setEmailVerificationToken('');
+                        setEmailCodeSent(false);
+                        setEmailVerificationCode('');
+                      }}
                       placeholder="name@gmail.com"
                       required
                     />
@@ -726,6 +781,25 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                       required
                     />
                   </label>
+                </div>
+
+                <div className="form-label" style={{ marginTop: '8px' }}>
+                  <span style={{ display: 'block', marginBottom: '8px' }}>Email verification</span>
+                  {emailVerificationToken ? (
+                    <div style={{ color: '#166534', fontSize: '12px', fontWeight: 600 }}>✓ Email verified</div>
+                  ) : (
+                    <>
+                      <button type="button" className="button button-outline" disabled={isLoading} onClick={() => sendSignupVerificationCode(guestEmail, guestName)}>
+                        {isLoading ? 'Sending...' : emailCodeSent ? 'Resend code' : 'Send verification code'}
+                      </button>
+                      {emailCodeSent && (
+                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                          <input type="text" inputMode="numeric" maxLength={6} value={emailVerificationCode} onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit code" />
+                          <button type="button" className="button button-dark" disabled={isLoading} onClick={() => verifySignupEmailCode(guestEmail)}>Verify</button>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 <label className="form-label" style={{ position: 'relative' }}>
@@ -931,7 +1005,12 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                           <input
                             type="email"
                             value={hostData.email}
-                            onChange={(e) => setHostData({ ...hostData, email: e.target.value })}
+                            onChange={(e) => {
+                              setHostData({ ...hostData, email: e.target.value });
+                              setEmailVerificationToken('');
+                              setEmailCodeSent(false);
+                              setEmailVerificationCode('');
+                            }}
                             placeholder="yourstay@gmail.com"
                             required
                           />
@@ -947,6 +1026,24 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                           />
                         </label>
                       </div>
+                      <div className="form-label">
+                        <span style={{ display: 'block', marginBottom: '8px' }}>Email verification</span>
+                        {emailVerificationToken ? (
+                          <div style={{ color: '#166534', fontSize: '12px', fontWeight: 600 }}>✓ Email verified</div>
+                        ) : (
+                          <>
+                            <button type="button" className="button button-outline" disabled={isLoading} onClick={() => sendSignupVerificationCode(hostData.email, hostData.fullName)}>
+                              {isLoading ? 'Sending...' : emailCodeSent ? 'Resend code' : 'Send verification code'}
+                            </button>
+                            {emailCodeSent && (
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                                <input type="text" inputMode="numeric" maxLength={6} value={emailVerificationCode} onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit code" />
+                                <button type="button" className="button button-dark" disabled={isLoading} onClick={() => verifySignupEmailCode(hostData.email)}>Verify</button>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
                       <button
                         type="button"
                         className="button button-dark"
@@ -954,6 +1051,10 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                         onClick={() => {
                           if (!hostData.fullName.trim() || !hostData.email.trim() || !hostData.phone.trim()) {
                             setError('Please provide your name, Gmail/email, and mobile phone.');
+                            return;
+                          }
+                          if (!emailVerificationToken) {
+                            setError('Verify your email address before continuing.');
                             return;
                           }
                           setError(null);

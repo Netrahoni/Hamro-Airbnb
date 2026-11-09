@@ -164,6 +164,21 @@ export const api = {
     return request<{ adminGmailConfigured: boolean; googleClientId: string }>('/api/auth/config');
   },
 
+  // Email verification: OTPs are generated and validated by the backend.
+  async sendVerificationCode(email: string, fullName: string) {
+    return request<{ emailSent: boolean; message: string }>('/api/auth/send-verification-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, fullName }),
+    });
+  },
+
+  async verifyEmailCode(email: string, code: string) {
+    return request<{ verificationToken: string; message: string }>('/api/auth/verify-email-code', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    });
+  },
+
   // Auth Operations
   async login(identifier: string, password: string, role?: UserRole) {
     const res = await request<{ user: User; token: string }>('/api/auth/login', {
@@ -187,7 +202,7 @@ export const api = {
     return res;
   },
 
-  async registerGuest(input: RegisterInput) {
+  async registerGuest(input: RegisterInput & { verificationToken: string }) {
     const res = await request<{ user: User; token: string }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -198,13 +213,14 @@ export const api = {
     return res;
   },
 
-  async registerHost(input: HostRegisterInput) {
+  async registerHost(input: HostRegisterInput, verificationToken: string) {
     const payload = {
       fullName: input.fullName,
       email: input.email,
       phone: input.phone,
       password: input.password,
       role: 'owner',
+      verificationToken,
       propertyName: input.propertyName,
       propertyType: input.propertyType,
       city: input.city,
