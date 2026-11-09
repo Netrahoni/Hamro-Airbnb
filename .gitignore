@@ -12,3 +12,7 @@ server/node_modules/
 server/dist/
 
 .vercel
+
+# Auto-sync log
+auto-sync.log
+*.log
