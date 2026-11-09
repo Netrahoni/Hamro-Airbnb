@@ -363,13 +363,34 @@ router.post('/admin/login', async (req, res) => {
       return res.status(401).json({ success: false, error: 'Administrator credentials or authenticator code are invalid.' });
     }
 
-    user.failedLoginAttempts = 0;
-    user.lockUntil = null;
-    user.lastLogin = new Date();
-    user.lastIp = req.ip || '';
-    await user.save();
-    const token = generateToken(user);
-    return res.json({ success: true, message: 'Administrator authentication successful.', token, user: user.toJSON() });
+    // Atomically consume this TOTP time-step. The conditional update prevents
+    // the same valid code from being accepted by concurrent login requests.
+    const authenticatedUser = await User.findOneAndUpdate(
+      {
+        _id: user._id,
+        $or: [
+          { lastTotpCounter: { $lt: matchedTotpCounter } },
+          { lastTotpCounter: { $exists: false } },
+        ],
+      },
+      {
+        $set: {
+          lastTotpCounter: matchedTotpCounter,
+          failedLoginAttempts: 0,
+          lockUntil: null,
+          lastLogin: new Date(),
+          lastIp: req.ip || '',
+        },
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!authenticatedUser) {
+      return res.status(401).json({ success: false, error: 'Administrator credentials or authenticator code are invalid.' });
+    }
+
+    const token = generateToken(authenticatedUser);
+    return res.json({ success: true, message: 'Administrator authentication successful.', token, user: authenticatedUser.toJSON() });
   } catch (error) {
     console.error('Admin login error:', error);
     return res.status(500).json({ success: false, error: 'Unable to authenticate administrator.' });
