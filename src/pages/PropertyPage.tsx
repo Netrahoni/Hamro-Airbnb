@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, BadgeCheck, Check, Heart, MapPin, Share2, ShieldCheck, Sparkles, Star, Wifi, Zap, Users, ChevronLeft, ChevronRight, Coffee, Car, Mountain, Utensils, X } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import Badge from '../components/Badge';
-import { listings } from '../data/listings';
+import { api, toListing } from '../services/api';
+import type { Listing } from '../data/listings';
 
 const galleryExtras = [
   'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1000&q=85',
@@ -13,7 +14,20 @@ const galleryExtras = [
 
 export default function PropertyPage() {
   const { listingId = '' } = useParams();
-  const listing = listings.find((item) => item.id === listingId);
+  const [listing, setListing] = useState<Listing | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api.getPublicProperty(listingId).then((result) => {
+      if (cancelled) return;
+      if (result.success && result.data) setListing(toListing(result.data.property));
+      else setLoadError(result.error || 'This published stay could not be found.');
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [listingId]);
   const [saved, setSaved] = useState(false);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [activePhoto, setActivePhoto] = useState(0);
@@ -28,7 +42,8 @@ export default function PropertyPage() {
   const total = subtotal + serviceFee;
   const today = new Date().toISOString().slice(0, 10);
 
-  if (!listing) return <div className="container not-found property-not-found"><div className="eyebrow">STAY NOT FOUND</div><h1>This listing is unavailable.</h1><p className="muted">It may have been removed or the link may be incorrect.</p><Link className="button button-dark" to="/">Explore stays</Link></div>;
+  if (loading) return <div className="container property-not-found"><p className="muted">Loading stay details…</p></div>;
+  if (!listing) return <div className="container not-found property-not-found"><div className="eyebrow">STAY NOT FOUND</div><h1>This listing is unavailable.</h1><p className="muted">{loadError || 'It may have been removed or the link may be incorrect.'}</p><Link className="button button-dark" to="/">Explore stays</Link></div>;
 
   async function shareListing() {
     if (!listing) return;

@@ -20,7 +20,7 @@ import Badge from '../components/Badge';
 import SectionHeading from '../components/SectionHeading';
 import { useAuth } from '../context/AuthContext';
 import type { UserStatus } from '../types/auth';
-import { api, type HostProperty, type HostPropertyInput } from '../services/api';
+import { api, type HostProperty, type HostPropertyInput, type MarketplaceBooking } from '../services/api';
 
 export { default as AuthPage } from './AuthPage';
 
@@ -132,6 +132,9 @@ export function OwnerPage() {
   const [editing, setEditing] = useState<HostProperty | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ListingFormState>(emptyListingForm);
+  const [reservations, setReservations] = useState<MarketplaceBooking[]>([]);
+  const [reservationLoading, setReservationLoading] = useState(false);
+  const [reservationError, setReservationError] = useState('');
 
   const loadProperties = async () => {
     setLoading(true);
@@ -143,6 +146,18 @@ export function OwnerPage() {
   };
 
   useEffect(() => { void loadProperties(); }, []);
+  useEffect(() => {
+    if (pathname !== '/owner/reservations') return;
+    let cancelled = false;
+    setReservationLoading(true);
+    api.getBookings().then((result) => {
+      if (cancelled) return;
+      if (result.success && result.data) setReservations(result.data.bookings);
+      else setReservationError(result.error || 'Unable to load reservations.');
+      setReservationLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [pathname]);
 
   const openCreate = () => { setEditing(null); setForm(emptyListingForm); setActionError(''); setShowForm(true); };
   const openEdit = (property: HostProperty) => { setEditing(property); setForm(listingToForm(property)); setActionError(''); setShowForm(true); };
@@ -195,6 +210,24 @@ export function OwnerPage() {
   const draftCount = properties.filter(item => item.status === 'draft').length;
   const visibleProperties = properties.filter(item => item.status !== 'unlisted');
   const isListings = pathname === '/owner/listings';
+
+  if (pathname === '/owner/reservations') {
+    return (
+      <div className="portal-page host-workspace">
+        <SectionHeading eyebrow="GUEST BOOKINGS" title="Reservations" description="Confirmed guest reservations for your published properties. Payment is collected directly at the property." />
+        {reservationError && <div className="host-alert host-alert-error" role="alert">{reservationError}</div>}
+        {reservationLoading ? <div className="host-empty-state">Loading reservations…</div> : reservations.length === 0 ? <div className="host-empty-state"><h3>No reservations yet</h3><p>Bookings for your published properties will appear here.</p></div> : (
+          <div className="panel host-listings-panel"><div className="host-property-list">{reservations.map((booking) => (
+            <article className="host-property-row" key={booking.id}>
+              <div className="host-property-thumb">{booking.propertyImage ? <img src={booking.propertyImage} alt={booking.propertyTitle}/> : <span>Reservation</span>}</div>
+              <div className="host-property-main"><h4>{booking.propertyTitle}</h4><p>{booking.bookingReference} · {booking.guestName} · {booking.guestPhone}</p><p>{booking.checkIn} – {booking.checkOut} · {booking.guests} {booking.guests === 1 ? 'guest' : 'guests'} · NPR {booking.totalAmount.toLocaleString('en-IN')}</p><span className={`host-status host-status-${booking.bookingStatus === 'confirmed' ? 'active' : booking.bookingStatus}`}>{booking.bookingStatus}</span></div>
+              <div className="host-property-actions"><span className="host-review-note">Pay at property</span></div>
+            </article>
+          ))}</div></div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="portal-page host-workspace">
@@ -262,7 +295,7 @@ export function OwnerPage() {
             </article>
           ))}</div>}
       </div>
-      <p className="host-workspace-note">Guest reservations, occupancy and earnings will become live when the booking engine is implemented in the next phase. No demo booking or revenue figures are shown here.</p>
+      <p className="host-workspace-note">Reservations are saved to your account. Payments remain pay-at-property until online payment is configured.</p>
     </div>
   );
 }

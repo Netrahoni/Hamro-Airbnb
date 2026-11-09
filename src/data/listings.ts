@@ -1,7 +1,7 @@
 export type Listing = {
   id: string;
   name: string;
-  city: 'Kathmandu' | 'Pokhara';
+  city: string;
   area: string;
   type: string;
   price: number;
