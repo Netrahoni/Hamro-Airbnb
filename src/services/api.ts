@@ -29,6 +29,70 @@ export type HostProperty = {
 
 export type HostPropertyInput = Omit<HostProperty, 'id' | '_id' | 'status'> & { status?: string };
 
+export type MarketplaceProperty = {
+  _id?: string;
+  id: string;
+  title: string;
+  tagline?: string;
+  propertyType: string;
+  hostName?: string;
+  location: { city: string; district?: string; streetAddress?: string };
+  pricePerNight: number;
+  currency?: string;
+  rating?: number;
+  reviewCount?: number;
+  images?: string[];
+  amenities?: string[];
+  description?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  maxGuests?: number;
+};
+
+export type MarketplaceBooking = {
+  id: string;
+  bookingReference: string;
+  guestName: string;
+  guestEmail: string;
+  guestPhone: string;
+  property: string;
+  propertyTitle: string;
+  propertyCity: string;
+  propertyImage: string;
+  host: string;
+  hostName: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  guests: number;
+  nightlyRate: number;
+  subtotal: number;
+  serviceFee: number;
+  totalAmount: number;
+  currency: string;
+  paymentMethod: 'pay_at_property';
+  paymentStatus: 'pending' | 'paid' | 'refunded';
+  bookingStatus: 'confirmed' | 'completed' | 'cancelled';
+  specialRequests?: string;
+};
+
+export function toListing(property: MarketplaceProperty) {
+  return {
+    id: property.id || property._id || '',
+    name: property.title,
+    city: property.location.city,
+    area: [property.location.streetAddress, property.location.district, property.location.city].filter(Boolean).join(', '),
+    type: property.propertyType,
+    price: property.pricePerNight,
+    rating: property.rating || 0,
+    reviews: property.reviewCount || 0,
+    image: property.images?.[0] || 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1200&q=85',
+    tags: property.amenities || [],
+    description: property.description || '',
+    host: property.hostName || 'Local host',
+  };
+}
+
 const TOKEN_KEY = 'ns_jwt_token';
 
 // In production (Vercel), VITE_API_URL points to the deployed backend.
@@ -205,6 +269,37 @@ export const api = {
     });
   },
 
+
+  // Public marketplace and booking operations
+  async getPublicProperties(city?: string) {
+    const query = city ? `?city=${encodeURIComponent(city)}` : '';
+    return request<{ properties: MarketplaceProperty[]; count: number }>(`/api/properties${query}`);
+  },
+
+  async getPublicProperty(id: string) {
+    return request<{ property: MarketplaceProperty }>(`/api/properties/${encodeURIComponent(id)}`);
+  },
+
+  async createBooking(input: { propertyId: string; checkIn: string; checkOut: string; guests: number; guestPhone: string; specialRequests?: string }) {
+    return request<{ booking: MarketplaceBooking; message: string }>('/api/bookings', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getBookings() {
+    return request<{ bookings: MarketplaceBooking[]; count: number }>('/api/bookings');
+  },
+
+  async getBooking(id: string) {
+    return request<{ booking: MarketplaceBooking }>(`/api/bookings/${encodeURIComponent(id)}`);
+  },
+
+  async cancelBooking(id: string) {
+    return request<{ booking: MarketplaceBooking; message: string }>(`/api/bookings/${encodeURIComponent(id)}/cancel`, {
+      method: 'PATCH',
+    });
+  },
 
   // Host property management
   async getHostProperties() {
