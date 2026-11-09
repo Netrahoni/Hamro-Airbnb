@@ -15,6 +15,7 @@ export interface BankDetails {
 
 export interface User {
   id: string;
+  username?: string;
   fullName: string;
   email: string;
   phone: string;
@@ -40,21 +41,22 @@ export interface User {
 }
 
 export interface RegisterInput {
-  fullName: string;
-  email: string;
-  phone: string;
+  username: string;
+  fullName?: string;
+  email?: string;
+  phone?: string;
   password: string;
   role: UserRole;
-  verificationToken: string;
   propertyName?: string;
   propertyCity?: string;
   propertyType?: string;
 }
 
 export interface HostRegisterInput {
-  fullName: string;
-  email: string;
-  phone: string;
+  username: string;
+  fullName?: string;
+  email?: string;
+  phone?: string;
   password: string;
   citizenshipNumber: string;
   propertyName: string;

@@ -2,53 +2,19 @@ import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
 import type { HostRegisterInput, UserRole } from '../types/auth';
 import {
-  UserRound,
   Building2,
   ShieldCheck,
   Eye,
   EyeOff,
-  CheckCircle2,
   AlertCircle,
   ArrowRight,
   ShieldAlert,
-  Lock,
-  Landmark,
-  FileCheck,
   Clock,
   Key,
 } from 'lucide-react';
 import Badge from '../components/Badge';
-
-function decodeJwt(token: string): Record<string, unknown> | null {
-  try {
-    const base64Url = token.split('.')[1];
-    if (!base64Url) return null;
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-    return JSON.parse(jsonPayload) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24">
-      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-    </svg>
-  );
-}
 
 interface AuthPageProps {
   initialSignup?: boolean;
@@ -62,7 +28,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
 
   const {
     login,
-    loginWithGoogle,
     register,
     registerHost,
     adminLogin,
@@ -82,56 +47,17 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Guest Registration States
+  const [guestUsername, setGuestUsername] = useState('');
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
-  const [guestPhone, setGuestPhone] = useState('+977 98');
+  const [guestPhone, setGuestPhone] = useState('');
   const [guestPassword, setGuestPassword] = useState('');
-  const [emailVerificationCode, setEmailVerificationCode] = useState('');
-  const [emailVerificationToken, setEmailVerificationToken] = useState('');
-  const [emailCodeSent, setEmailCodeSent] = useState(false);
-
-  const sendSignupVerificationCode = async (email: string, fullName: string) => {
-    setError(null);
-    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError('Enter a valid email address before requesting a verification code.');
-      return;
-    }
-    setIsLoading(true);
-    const result = await api.sendVerificationCode(email.trim(), fullName.trim() || 'Traveler');
-    setIsLoading(false);
-    if (result.success) {
-      setEmailCodeSent(true);
-      setEmailVerificationToken('');
-      setEmailVerificationCode('');
-      setSuccessMsg('Verification code sent. Check your inbox and spam folder.');
-    } else {
-      setError(result.error || 'Could not send the verification code.');
-    }
-  };
-
-  const verifySignupEmailCode = async (email: string) => {
-    setError(null);
-    if (!/^\d{6}$/.test(emailVerificationCode.trim())) {
-      setError('Enter the six-digit code sent to your email.');
-      return;
-    }
-    setIsLoading(true);
-    const result = await api.verifyEmailCode(email.trim(), emailVerificationCode.trim());
-    setIsLoading(false);
-    if (result.success && result.data?.verificationToken) {
-      setEmailVerificationToken(result.data.verificationToken);
-      setSuccessMsg('Email verified successfully. You can continue registration.');
-    } else {
-      setError(result.error || 'Email verification failed. Request a new code.');
-    }
-  };
-
   // Host Registration Multi-Step Wizard States
-  const [hostStep, setHostStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [hostData, setHostData] = useState<HostRegisterInput>({
+    username: '',
     fullName: '',
     email: '',
-    phone: '+977 98',
+    phone: '',
     password: '',
     citizenshipNumber: '',
     propertyName: '',
@@ -193,116 +119,13 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     else navigate('/trips', { replace: true });
   };
 
-  const [googleClientId, setGoogleClientId] = useState('');
-  const [isGoogleReady, setIsGoogleReady] = useState(false);
-
-  // Fetch Google Client ID from backend
-  useEffect(() => {
-    api.getConfig().then((res) => {
-      if (res.success && res.data?.googleClientId) {
-        setGoogleClientId(res.data.googleClientId);
-      }
-    });
-  }, []);
-
-  // Real Google OAuth: Process ID Token (One-Tap / Credential JWT)
-  const processGoogleIdToken = async (idToken: string) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const payload = decodeJwt(idToken);
-      const email = (payload?.email as string) || '';
-      const name = (payload?.name as string) || (payload?.given_name as string) || email.split('@')[0] || 'Traveler';
-      const avatarUrl = (payload?.picture as string) || undefined;
-      const googleId = (payload?.sub as string) || undefined;
-
-      if (!email) {
-        throw new Error('Google did not provide an email address.');
-      }
-
-      const res = await loginWithGoogle(
-        { name, email, avatarUrl, googleId },
-        idToken
-      );
-
-      if (res.success) {
-        handleRedirect(res.user?.role || 'guest');
-      } else {
-        setError(res.error || 'Google sign-in failed.');
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Google verification failed';
-      setError(msg);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Render official Google Identity Services button (No redirect, No redirect_uri_mismatch!)
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-
-    const renderGoogleBtn = () => {
-      const google = (window as unknown as { google?: { accounts?: { id?: { initialize: (config: unknown) => void; renderButton: (el: HTMLElement, opts: unknown) => void } } } }).google;
-      const container = document.getElementById('google-native-btn-container');
-
-      if (googleClientId && google?.accounts?.id && container && activeRole === 'guest') {
-        try {
-          google.accounts.id.initialize({
-            client_id: googleClientId,
-            callback: (response: { credential?: string }) => {
-              if (response?.credential) {
-                processGoogleIdToken(response.credential);
-              }
-            },
-            auto_select: false,
-          });
-
-          // Container is always empty from React's side — safe to let GIS render into it
-          google.accounts.id.renderButton(container, {
-            type: 'standard',
-            theme: 'outline',
-            size: 'large',
-            text: 'continue_with',
-            shape: 'rectangular',
-            logo_alignment: 'left',
-            width: Math.min(container.offsetWidth || 380, 420),
-          });
-
-          setIsGoogleReady(true);
-          return true;
-        } catch (err) {
-          console.warn('Google Identity initialization notice:', err);
-        }
-      }
-      return false;
-    };
-
-    if (!renderGoogleBtn()) {
-      interval = setInterval(() => {
-        if (renderGoogleBtn()) {
-          clearInterval(interval);
-        }
-      }, 250);
-    }
-
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [googleClientId, activeRole, isSignup]);
-
-  // The fallback is informational only. Authentication is accepted exclusively through Google's signed ID credential.
-  const handleGoogleAuthClick = () => {
-    setError('Secure Google Sign-In is still loading. Please wait for the official Google button to appear.');
-  };
-
   // Standard Login Submit
   const handleLoginSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (!identifier.trim() || !password) {
-      setError('Please provide your registered email/phone and password.');
+      setError('Please provide your username and password.');
       return;
     }
 
@@ -321,24 +144,20 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const handleGuestSignupStart = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!guestName.trim() || !guestEmail.trim() || !guestPhone.trim() || !guestPassword) {
-      setError('Please fill in all required registration fields.');
+    if (!guestUsername.trim() || !guestPassword) {
+      setError('Please enter a username and password.');
       return;
     }
 
-    if (!emailVerificationToken) {
-      setError('Verify your email address before creating your traveler account.');
-      return;
-    }
 
     setIsLoading(true);
     const result = await register({
-      fullName: guestName.trim(),
-      email: guestEmail.trim(),
-      phone: guestPhone.trim(),
+      username: guestUsername.trim().toLowerCase(),
+      fullName: guestName.trim() || guestUsername.trim(),
+      email: guestEmail.trim() || undefined,
+      phone: guestPhone.trim() || undefined,
       password: guestPassword,
       role: 'guest',
-      verificationToken: emailVerificationToken,
     });
     setIsLoading(false);
 
@@ -354,22 +173,13 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const handleHostRegisterSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!hostData.fullName.trim() || !hostData.email.trim() || !hostData.password) {
-      setError('Please fill in your primary contact and host security credentials.');
-      return;
-    }
-    if (!hostData.propertyName.trim() || !hostData.city.trim()) {
-      setError('Please provide your property name and city.');
-      return;
-    }
-
-    if (!emailVerificationToken) {
-      setError('Verify your email address before completing host registration.');
+    if (!hostData.username.trim() || !hostData.password) {
+      setError('Please choose a username and password.');
       return;
     }
 
     setIsLoading(true);
-    const result = await registerHost(hostData, emailVerificationToken);
+    const result = await registerHost(hostData);
     setIsLoading(false);
 
     if (result.success) {
@@ -387,7 +197,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     setForgotSuccessMsg(null);
 
     if (!forgotIdentifier.trim()) {
-      setForgotError('Please enter your registered email address or mobile phone.');
+      setForgotError('Enter your username or the email address linked to your account.');
       return;
     }
 
@@ -624,47 +434,16 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                 : 'Welcome back. Access your upcoming stays, saved wishlists and bookings.'}
             </p>
 
-            {/* Google Authentication — official GIS button is injected here by Google's SDK.
-                IMPORTANT: React must NEVER render children inside this div.
-                Google's renderButton() calls innerHTML='' which breaks React's vdom if there are children. */}
-            <div
-              id="google-native-btn-container"
-              style={{
-                display: isGoogleReady ? 'flex' : 'none',
-                justifyContent: 'center',
-                width: '100%',
-                marginBottom: '16px',
-              }}
-            />
-
-            {/* Fallback button shown BEFORE Google SDK finishes loading — it is a sibling, NOT inside the GIS container */}
-            {!isGoogleReady && (
-              <button
-                type="button"
-                className="google-auth-btn"
-                onClick={handleGoogleAuthClick}
-                disabled={isLoading}
-                style={{ marginBottom: '16px' }}
-              >
-                <GoogleIcon />
-                <span>{isLoading ? 'Connecting with Google...' : 'Continue with Google'}</span>
-              </button>
-            )}
-
-            <div className="auth-or-divider">
-              <span>OR USE PERSONAL GMAIL / EMAIL / PHONE</span>
-            </div>
-
             {!isSignup ? (
               /* GUEST SIGN IN FORM */
               <form onSubmit={handleLoginSubmit}>
                 <label className="form-label">
-                  <span>Email address or mobile (+977)</span>
+                  <span>Username</span>
                   <input
                     type="text"
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="yourname@gmail.com or +977 98XXXXXXXX"
+                    placeholder="Enter your username"
                     required
                   />
                 </label>
@@ -745,61 +524,39 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
               /* GUEST SIGN UP FORM */
               <form onSubmit={handleGuestSignupStart}>
                 <label className="form-label">
-                  <span>Full Legal Name</span>
+                  <span>Full Name (optional)</span>
                   <input
                     type="text"
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
                     placeholder="e.g. Aayush Shrestha"
-                    required
                   />
+                </label>
+
+                <label className="form-label">
+                  <span>Username</span>
+                  <input type="text" value={guestUsername} onChange={(e) => setGuestUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24))} placeholder="Choose a username" minLength={3} maxLength={24} required />
                 </label>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                   <label className="form-label">
-                    <span>Personal Gmail / Email</span>
+                    <span>Email (optional)</span>
                     <input
                       type="email"
                       value={guestEmail}
-                      onChange={(e) => {
-                        setGuestEmail(e.target.value);
-                        setEmailVerificationToken('');
-                        setEmailCodeSent(false);
-                        setEmailVerificationCode('');
-                      }}
+                      onChange={(e) => setGuestEmail(e.target.value)}
                       placeholder="name@gmail.com"
-                      required
                     />
                   </label>
                   <label className="form-label">
-                    <span>Mobile Phone Number</span>
+                    <span>Mobile Phone (optional)</span>
                     <input
                       type="tel"
                       value={guestPhone}
                       onChange={(e) => setGuestPhone(e.target.value)}
                       placeholder="+977 98XXXXXXXX"
-                      required
                     />
                   </label>
-                </div>
-
-                <div className="form-label" style={{ marginTop: '8px' }}>
-                  <span style={{ display: 'block', marginBottom: '8px' }}>Email verification</span>
-                  {emailVerificationToken ? (
-                    <div style={{ color: '#166534', fontSize: '12px', fontWeight: 600 }}>✓ Email verified</div>
-                  ) : (
-                    <>
-                      <button type="button" className="button button-outline" disabled={isLoading} onClick={() => sendSignupVerificationCode(guestEmail, guestName)}>
-                        {isLoading ? 'Sending...' : emailCodeSent ? 'Resend code' : 'Send verification code'}
-                      </button>
-                      {emailCodeSent && (
-                        <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                          <input type="text" inputMode="numeric" maxLength={6} value={emailVerificationCode} onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit code" />
-                          <button type="button" className="button button-dark" disabled={isLoading} onClick={() => verifySignupEmailCode(guestEmail)}>Verify</button>
-                        </div>
-                      )}
-                    </>
-                  )}
                 </div>
 
                 <label className="form-label" style={{ position: 'relative' }}>
@@ -809,8 +566,8 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                       type={showPassword ? 'text' : 'password'}
                       value={guestPassword}
                       onChange={(e) => setGuestPassword(e.target.value)}
-                      placeholder="At least 10 characters"
-                      minLength={10}
+                      placeholder="At least 8 characters"
+                      minLength={8}
                       required
                     />
                     <button
@@ -860,374 +617,53 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
         {/* ============================================================== */}
         {activeRole === 'owner' && (
           <div>
-            <div className="eyebrow" style={{ color: '#17372f' }}>
-              HOST & PARTNER NETWORK
-            </div>
-            <h1 style={{ fontSize: '26px' }}>{isSignup ? 'Partner with NepalStay' : 'Host Portal Sign In'}</h1>
+            <div className="eyebrow" style={{ color: '#17372f' }}>HOST & PARTNER NETWORK</div>
+            <h1 style={{ fontSize: '26px' }}>{isSignup ? 'Create your host account' : 'Host Portal Sign In'}</h1>
             <p className="muted" style={{ fontSize: '13px', marginBottom: '20px' }}>
               {isSignup
-                ? 'Register your property, homestay, or boutique hotel in Nepal and connect with travelers worldwide.'
-                : 'Access your reservations, guest communications, pricing, and payout dashboard.'}
+                ? 'Create an account with a username and password. You can add your property details later from the Host Dashboard.'
+                : 'Sign in with your host username and password to manage your property and reservations.'}
             </p>
-
             {!isSignup ? (
-              /* HOST SIGN IN */
               <form onSubmit={handleLoginSubmit}>
                 <label className="form-label">
-                  <span>Host Business Email or Mobile (+977)</span>
-                  <input
-                    type="text"
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="host.stay@gmail.com or +977 98XXXXXXXX"
-                    required
-                  />
+                  <span>Host Username</span>
+                  <input type="text" value={identifier} onChange={(e) => setIdentifier(e.target.value.toLowerCase())} placeholder="Enter your host username" autoComplete="username" required />
                 </label>
-
-                <label className="form-label" style={{ position: 'relative' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Host Password</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setForgotIdentifier(identifier);
-                        setForgotError(null);
-                        setForgotSuccessMsg(null);
-                        setForgotStep('request');
-                        setShowForgotPasswordModal(true);
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: 0,
-                        fontSize: '11px',
-                        color: '#17372f',
-                        cursor: 'pointer',
-                        fontWeight: 600,
-                      }}
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                  <div style={{ position: 'relative' }}>
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter host password"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      style={{
-                        position: 'absolute',
-                        right: '12px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: '#8995a5',
-                      }}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
+                <label className="form-label">
+                  <span>Host Password</span>
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" autoComplete="current-password" required />
                 </label>
-
                 <button type="submit" className="button button-dark button-full" disabled={isLoading} style={{ padding: '13px', marginTop: '10px' }}>
                   {isLoading ? 'Signing in...' : 'Sign In to Host Dashboard'}
                 </button>
-
                 <div className="auth-switch" style={{ marginTop: '18px' }}>
                   Want to host your property on NepalStay?{' '}
-                  <a
-                    href="#register-host"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setIsSignup(true);
-                      setHostStep(1);
-                      setError(null);
-                    }}
-                    style={{ fontWeight: 700, color: '#17372f' }}
-                  >
-                    Start Host Registration
+                  <a href="#register-host" onClick={(e) => { e.preventDefault(); setIsSignup(true); setError(null); }} style={{ fontWeight: 700, color: '#17372f' }}>
+                    Create a host account
                   </a>
                 </div>
               </form>
             ) : (
-              /* HOST REGISTRATION STEP-BY-STEP WIZARD */
-              <div>
-                {/* Wizard Step Progress */}
-                <div style={{ display: 'flex', gap: '6px', marginBottom: '20px' }}>
-                  {[1, 2, 3, 4, 5].map((step) => (
-                    <div
-                      key={step}
-                      style={{
-                        flex: 1,
-                        height: '4px',
-                        borderRadius: '2px',
-                        background: hostStep >= step ? '#17372f' : '#eaede7',
-                        transition: 'background 0.2s ease',
-                      }}
-                    />
-                  ))}
-                </div>
-
-                <div style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: '14px' }}>
-                  STEP {hostStep} OF 5: {
-                    hostStep === 1 ? 'Primary Contact' :
-                    hostStep === 2 ? 'Property Profile' :
-                    hostStep === 3 ? 'Nepali Legal & Tax Verification' :
-                    hostStep === 4 ? 'Banking & Direct Payouts' :
-                    'Capacity & Security'
-                  }
-                </div>
-
-                <form onSubmit={hostStep === 5 ? handleHostRegisterSubmit : (e) => { e.preventDefault(); setHostStep((prev) => Math.min(5, prev + 1) as any); }}>
-                  {/* Step 1: Host Personal Details */}
-                  {hostStep === 1 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <label className="form-label">
-                        <span>Host Full Legal Name</span>
-                        <input
-                          type="text"
-                          value={hostData.fullName}
-                          onChange={(e) => setHostData({ ...hostData, fullName: e.target.value })}
-                          placeholder="Your Full Name"
-                          required
-                        />
-                      </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label className="form-label">
-                          <span>Personal or Business Gmail</span>
-                          <input
-                            type="email"
-                            value={hostData.email}
-                            onChange={(e) => {
-                              setHostData({ ...hostData, email: e.target.value });
-                              setEmailVerificationToken('');
-                              setEmailCodeSent(false);
-                              setEmailVerificationCode('');
-                            }}
-                            placeholder="yourstay@gmail.com"
-                            required
-                          />
-                        </label>
-                        <label className="form-label">
-                          <span>Mobile Phone (+977)</span>
-                          <input
-                            type="tel"
-                            value={hostData.phone}
-                            onChange={(e) => setHostData({ ...hostData, phone: e.target.value })}
-                            placeholder="+977 98XXXXXXXX"
-                            required
-                          />
-                        </label>
-                      </div>
-                      <div className="form-label">
-                        <span style={{ display: 'block', marginBottom: '8px' }}>Email verification</span>
-                        {emailVerificationToken ? (
-                          <div style={{ color: '#166534', fontSize: '12px', fontWeight: 600 }}>✓ Email verified</div>
-                        ) : (
-                          <>
-                            <button type="button" className="button button-outline" disabled={isLoading} onClick={() => sendSignupVerificationCode(hostData.email, hostData.fullName)}>
-                              {isLoading ? 'Sending...' : emailCodeSent ? 'Resend code' : 'Send verification code'}
-                            </button>
-                            {emailCodeSent && (
-                              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                                <input type="text" inputMode="numeric" maxLength={6} value={emailVerificationCode} onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit code" />
-                                <button type="button" className="button button-dark" disabled={isLoading} onClick={() => verifySignupEmailCode(hostData.email)}>Verify</button>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                      <button
-                        type="button"
-                        className="button button-dark"
-                        style={{ marginTop: '10px' }}
-                        onClick={() => {
-                          if (!hostData.fullName.trim() || !hostData.email.trim() || !hostData.phone.trim()) {
-                            setError('Please provide your name, Gmail/email, and mobile phone.');
-                            return;
-                          }
-                          if (!emailVerificationToken) {
-                            setError('Verify your email address before continuing.');
-                            return;
-                          }
-                          setError(null);
-                          setHostStep(2);
-                        }}
-                      >
-                        Continue to Property Details <ArrowRight size={16} />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Step 2: Property Identity */}
-                  {hostStep === 2 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <label className="form-label">
-                        <span>Property / Homestay Name</span>
-                        <input
-                          type="text"
-                          value={hostData.propertyName}
-                          onChange={(e) => setHostData({ ...hostData, propertyName: e.target.value })}
-                          placeholder="e.g. Annapurna Panorama Homestay"
-                          required
-                        />
-                      </label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label className="form-label">
-                          <span>Property Category</span>
-                          <select
-                            value={hostData.propertyType}
-                            onChange={(e) => setHostData({ ...hostData, propertyType: e.target.value })}
-                          >
-                            <option value="Homestay">Community Homestay</option>
-                            <option value="Boutique Hotel">Boutique Hotel</option>
-                            <option value="Eco Lodge">Eco Lodge</option>
-                            <option value="Resort">Resort & Retreat</option>
-                            <option value="Traditional House">Heritage House</option>
-                          </select>
-                        </label>
-                        <label className="form-label">
-                          <span>City / Municipality</span>
-                          <input
-                            type="text"
-                            value={hostData.city}
-                            onChange={(e) => setHostData({ ...hostData, city: e.target.value })}
-                            placeholder="e.g. Pokhara"
-                            required
-                          />
-                        </label>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                        <label className="form-label">
-                          <span>District</span>
-                          <input
-                            type="text"
-                            value={hostData.district}
-                            onChange={(e) => setHostData({ ...hostData, district: e.target.value })}
-                            placeholder="e.g. Kaski"
-                            required
-                          />
-                        </label>
-                        <label className="form-label">
-                          <span>Ward & Street</span>
-                          <input
-                            type="text"
-                            value={hostData.streetAddress}
-                            onChange={(e) => setHostData({ ...hostData, streetAddress: e.target.value })}
-                            placeholder="e.g. Ward 6, Lakeside"
-                            required
-                          />
-                        </label>
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(1)}>
-                          Back
-                        </button>
-                        <button
-                          type="button"
-                          className="button button-dark"
-                          style={{ flex: 1 }}
-                          onClick={() => {
-                            if (!hostData.propertyName.trim() || !hostData.city.trim()) {
-                              setError('Please provide your property name and city.');
-                              return;
-                            }
-                            setError(null);
-                            setHostStep(3);
-                          }}
-                        >
-                          Continue to Legal Compliance <ArrowRight size={16} />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 3: KYC is deferred until secure document handling is available. */}
-                  {hostStep === 3 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <FileCheck size={16} /> Identity & Tax Verification
-                      </div>
-                      <div className="demo-callout">
-                        <ShieldCheck size={17}/>
-                        <span>We will request citizenship, PAN and supporting documents through a secure verification workflow after your account is created. Do not enter or upload identity numbers on this registration screen.</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(2)}>Back</button>
-                        <button type="button" className="button button-dark" style={{ flex: 1 }} onClick={() => setHostStep(4)}>Continue to Payout Setup <ArrowRight size={16}/></button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 4: Payout information is collected only after secure onboarding is available. */}
-                  {hostStep === 4 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Landmark size={16}/> Payout Settlement
-                      </div>
-                      <div className="demo-callout">
-                        <ShieldCheck size={17}/>
-                        <span>Bank account and payout details are not collected during signup. You can add them later when the secure host payout workflow is enabled.</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(3)}>Back</button>
-                        <button type="button" className="button button-dark" style={{ flex: 1 }} onClick={() => setHostStep(5)}>Continue to Final Step <ArrowRight size={16}/></button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 5: Capacity & Security */}
-                  {hostStep === 5 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ fontWeight: 700, fontSize: '13px', color: '#17372f', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Lock size={16} /> Secure Host Account
-                      </div>
-                      <p className="muted" style={{ fontSize: '11px', lineHeight: 1.6 }}>Create a host account with your email and password. Add room inventory, nightly rates and property photos later from the Host Dashboard.</p>
-                      <label className="form-label">
-                        <span>Host Account Password</span>
-                        <input
-                          type={showPassword ? 'text' : 'password'}
-                          value={hostData.password}
-                          onChange={(e) => setHostData({ ...hostData, password: e.target.value })}
-                          placeholder="Min 10 characters"
-                          minLength={10}
-                          required
-                        />
-                      </label>
-                      <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                        <button type="button" className="button button-outline" onClick={() => setHostStep(4)}>
-                          Back
-                        </button>
-                        <button type="submit" className="button button-dark" style={{ flex: 1 }} disabled={isLoading}>
-                          {isLoading ? 'Connecting to Database...' : 'Complete Host Registration'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </form>
-
-                <div className="auth-switch" style={{ marginTop: '20px' }}>
+              <form onSubmit={handleHostRegisterSubmit}>
+                <label className="form-label">
+                  <span>Username</span>
+                  <input type="text" value={hostData.username} onChange={(e) => setHostData({ ...hostData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24) })} placeholder="Choose a host username" minLength={3} maxLength={24} autoComplete="username" required />
+                </label>
+                <label className="form-label">
+                  <span>Password</span>
+                  <input type={showPassword ? 'text' : 'password'} value={hostData.password} onChange={(e) => setHostData({ ...hostData, password: e.target.value })} placeholder="At least 8 characters" minLength={8} autoComplete="new-password" required />
+                </label>
+                <button type="submit" className="button button-dark button-full" disabled={isLoading} style={{ padding: '13px', marginTop: '10px' }}>
+                  {isLoading ? 'Creating account...' : 'Create Host Account'} <ArrowRight size={16} />
+                </button>
+                <div className="auth-switch" style={{ marginTop: '18px' }}>
                   Already registered as a host?{' '}
-                  <a
-                    href="#login"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setIsSignup(false);
-                      setError(null);
-                    }}
-                    style={{ fontWeight: 700, color: '#17372f' }}
-                  >
+                  <a href="#login" onClick={(e) => { e.preventDefault(); setIsSignup(false); setError(null); }} style={{ fontWeight: 700, color: '#17372f' }}>
                     Host Sign In
                   </a>
                 </div>
-              </div>
+              </form>
             )}
           </div>
         )}
