@@ -158,6 +158,9 @@ router.post('/login', async (req, res) => {
         error: 'Invalid username or password.',
       });
     }
+    if (user.role === 'admin') {
+      return res.status(403).json({ success: false, error: 'Administrators must use the secure administrator sign-in with authenticator verification.' });
+    }
 
     if (user.status !== 'active') {
       return res.status(403).json({
@@ -315,7 +318,7 @@ router.post('/forgot-password', async (req, res) => {
     if (typeof identifier !== 'string' || !identifier.trim()) {
       return res.status(400).json({
         success: false,
-        error: 'Please enter your registered email address or mobile phone number.',
+        error: 'Enter your username or registered email address for password recovery.',
       });
     }
 
@@ -324,6 +327,7 @@ router.post('/forgot-password', async (req, res) => {
 
     const user = await User.findOne({
       $or: [
+        { username: cleanIdentifier },
         { email: cleanIdentifier },
         { phone: cleanIdentifier },
         ...(phoneLast10.length >= 10 ? [{ phone: new RegExp(`${phoneLast10}$`) }] : []),
@@ -390,6 +394,7 @@ router.post('/reset-password', async (req, res) => {
 
     const user = await User.findOne({
       $or: [
+        { username: cleanIdentifier },
         { email: cleanIdentifier },
         { phone: cleanIdentifier },
         ...(phoneLast10.length >= 10 ? [{ phone: new RegExp(`${phoneLast10}$`) }] : []),
