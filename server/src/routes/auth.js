@@ -76,7 +76,6 @@ router.post('/register', async (req, res) => {
       email,
       phone,
       password,
-      emailVerificationToken,
       role = 'guest',
       // Host details
       propertyName,
@@ -101,10 +100,6 @@ router.post('/register', async (req, res) => {
     const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'A valid, verified email address is required.' });
     if (cleanPhone && normalizePhone(cleanPhone).length < 10) return res.status(400).json({ success: false, error: 'Enter a valid phone number.' });
-
-    if (typeof emailVerificationToken !== 'string' || emailVerificationToken.length < 32) return res.status(403).json({ success: false, error: 'Verify your email address before creating an account.' });
-    const verification = await VerificationCode.findOne({ email: cleanEmail, purpose: 'signup', verifiedAt: { $ne: null }, verificationTokenHash: createHash('sha256').update(emailVerificationToken).digest('hex'), expiresAt: { $gt: new Date() } });
-    if (!verification) return res.status(403).json({ success: false, error: 'Email verification has expired or is invalid. Request a new code.' });
 
     // Check if user already exists
     const queryConditions = [];
@@ -155,8 +150,6 @@ router.post('/register', async (req, res) => {
       lastIp: req.ip || '',
     });
 
-    const consumedVerification = await VerificationCode.findOneAndDelete({ _id: verification._id, verificationTokenHash: createHash('sha256').update(emailVerificationToken).digest('hex'), verifiedAt: { $ne: null }, expiresAt: { $gt: new Date() } });
-    if (!consumedVerification) return res.status(403).json({ success: false, error: 'Email verification token has already been used or expired.' });
     await newUser.save();
     const token = generateToken(newUser);
 
@@ -241,7 +234,6 @@ router.post('/login', async (req, res) => {
 
     user.failedLoginAttempts = 0;
     user.lockUntil = null;
-    user.lastTotpCounter = matchedTotpCounter;
     user.lastLogin = new Date();
     user.lastIp = req.ip || '';
     await user.save();
