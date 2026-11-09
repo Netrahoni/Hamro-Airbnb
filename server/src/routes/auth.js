@@ -1,9 +1,8 @@
 import express from 'express';
-import { randomInt, randomBytes, createHash, timingSafeEqual, createHmac } from 'node:crypto';
+import { randomInt, createHash, timingSafeEqual, createHmac } from 'node:crypto';
 import { User } from '../models/User.js';
 import { VerificationCode } from '../models/VerificationCode.js';
 import { requireAuth, generateToken } from '../middleware/auth.js';
-import { OAuth2Client } from 'google-auth-library';
 import { sendPasswordResetEmail } from '../services/email.js';
 
 const router = express.Router();
@@ -61,7 +60,6 @@ router.get('/config', (req, res) => {
   res.json({
     success: true,
     adminGmailConfigured: false,
-    googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   });
 });
 
@@ -214,87 +212,6 @@ router.post('/login', async (req, res) => {
   }
 });
 
-/**
- * POST /api/auth/google
- * Google Sign In / Registration for Guests or Admin
- */
-router.post('/google', async (req, res) => {
-  try {
-    const { token: googleToken } = req.body;
-    if (typeof googleToken !== 'string' || !googleToken || !process.env.GOOGLE_CLIENT_ID) return res.status(400).json({ success: false, error: 'A valid Google ID token is required.' });
-    const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-    const ticket = await client.verifyIdToken({ idToken: googleToken, audience: process.env.GOOGLE_CLIENT_ID });
-    const payload = ticket.getPayload();
-    if (!payload?.email || payload.email_verified !== true || !payload.sub) return res.status(401).json({ success: false, error: 'Google account email is not verified.' });
-    const email = payload.email;
-    const name = payload.name || email.split('@')[0];
-    const avatarUrl = payload.picture || '';
-    const googleId = payload.sub;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        error: 'Valid email address is required from Google account.',
-      });
-    }
-
-    const cleanEmail = email.trim().toLowerCase();
-    let user = await User.findOne({ email: cleanEmail });
-
-    if (user) {
-      if (user.status !== 'active') {
-        return res.status(403).json({
-          success: false,
-          error: 'This account has been suspended by the administrator.',
-        });
-      }
-
-      user.authProvider = 'google';
-      if (avatarUrl) user.avatar = avatarUrl;
-      if (googleId) user.googleId = googleId;
-      user.lastLogin = new Date();
-      user.lastIp = req.ip || '';
-      await user.save();
-    } else {
-      // Create new user via Google
-      user = new User({
-        fullName: name || cleanEmail.split('@')[0],
-        email: cleanEmail,
-        role: 'guest',
-        authProvider: 'google',
-        avatar: avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || cleanEmail)}&background=17372f&color=fff`,
-        googleId: googleId || undefined,
-        status: 'active',
-        securityClearance: '',
-        twoFactorEnabled: false,
-        lastLogin: new Date(),
-        lastIp: req.ip || '',
-      });
-
-      await user.save();
-    }
-
-    const token = generateToken(user);
-
-    return res.json({
-      success: true,
-      message: 'Signed in with Google successfully.',
-      token,
-      user: user.toJSON(),
-    });
-  } catch (error) {
-    console.error('Google Auth error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Server error during Google authentication.',
-    });
-  }
-});
-
-/**
- * POST /api/auth/admin/login
- * Secure Administrator login with Staff ID or Admin Gmail + Password + 2FA TOTP code
- */
 router.post('/admin/login', async (req, res) => {
   try {
     const { staffIdOrEmail, password, totpCode } = req.body;
@@ -449,75 +366,6 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-/**
- * POST /api/auth/send-verification-code
- * Send verification code for guest or host sign-up
- */
-router.post('/send-verification-code', async (req, res) => {
-  try {
-    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const fullName = typeof req.body.fullName === 'string' ? req.body.fullName.trim().slice(0, 100) : 'Traveler';
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return res.status(400).json({ success: false, error: 'A valid email address is required.' });
-    }
-    if (await User.exists({ email })) {
-      return res.status(409).json({ success: false, error: 'An account already exists with this email address.' });
-    }
-    const existingCode = await VerificationCode.findOne({ email, purpose: 'signup', expiresAt: { $gt: new Date(Date.now() - 60 * 1000) } });
-    if (existingCode && existingCode.createdAt > new Date(Date.now() - 60 * 1000)) {
-      return res.status(429).json({ success: false, error: 'Please wait one minute before requesting another code.' });
-    }
-    const code = randomInt(100000, 1000000).toString();
-    await VerificationCode.deleteMany({ email, purpose: 'signup' });
-    const record = await VerificationCode.create({
-      email,
-      purpose: 'signup',
-      codeHash: createHash('sha256').update(code).digest('hex'),
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
-    });
-    const delivery = await sendPasswordResetEmail({ to: email, code, name: fullName, purpose: 'signup' });
-    if (!delivery.sent) {
-      await VerificationCode.deleteOne({ _id: record._id });
-      return res.status(503).json({ success: false, error: 'Email delivery is unavailable. Please try again later.' });
-    }
-    return res.json({ success: true, emailSent: true, message: 'A verification code has been sent to your email address.' });
-  } catch (error) {
-    console.error('Signup verification delivery failed:', error);
-    return res.status(500).json({ success: false, error: 'Unable to send a verification code.' });
-  }
-});
-
-router.post('/verify-email-code', async (req, res) => {
-  try {
-    const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
-    const code = typeof req.body.code === 'string' ? req.body.code.trim() : '';
-    if (!email || !/^\d{6}$/.test(code)) return res.status(400).json({ success: false, error: 'Enter a valid email address and six-digit code.' });
-    const record = await VerificationCode.findOne({ email, purpose: 'signup', expiresAt: { $gt: new Date() } });
-    if (!record || record.verifiedAt || record.attempts >= 5) return res.status(400).json({ success: false, error: 'Verification code is invalid or expired. Request a new code.' });
-    const candidate = Buffer.from(createHash('sha256').update(code).digest('hex'));
-    const expected = Buffer.from(record.codeHash);
-    if (candidate.length !== expected.length || !timingSafeEqual(candidate, expected)) {
-      record.attempts += 1;
-      if (record.attempts >= 5) await VerificationCode.deleteOne({ _id: record._id });
-      else await record.save();
-      return res.status(400).json({ success: false, error: 'Verification code is incorrect.' });
-    }
-    const verificationToken = randomBytes(32).toString('hex');
-    record.verifiedAt = new Date();
-    record.verificationTokenHash = createHash('sha256').update(verificationToken).digest('hex');
-    record.attempts = 0;
-    await record.save();
-    return res.json({ success: true, verificationToken, message: 'Email verified successfully.' });
-  } catch (error) {
-    console.error('Email verification failed:', error);
-    return res.status(500).json({ success: false, error: 'Unable to verify email address.' });
-  }
-});
-
-/**
- * POST /api/auth/reset-password
- * Reset password using the 6-digit code
- */
 router.post('/reset-password', async (req, res) => {
   try {
     const { identifier, code, newPassword } = req.body;
