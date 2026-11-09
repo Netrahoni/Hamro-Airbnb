@@ -70,7 +70,6 @@ export interface HostRegisterInput {
   branch: string;
   roomCount: number;
   baseRate: number;
-  emailVerificationToken?: string;
 }
 
 export interface AdminLoginInput {
