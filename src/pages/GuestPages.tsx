@@ -17,10 +17,13 @@ import {
 } from 'lucide-react';
 import { listings } from '../data/listings';
 import { useAuth } from '../context/AuthContext';
+import { api } from '../services/api';
+import type { MarketplaceBooking } from '../services/api';
 import Badge from '../components/Badge';
 
 type Booking = {
   id: string;
+  reference: string;
   property: string;
   city: string;
   image: string;
@@ -32,36 +35,26 @@ type Booking = {
   room: string;
 };
 
-const initialBookings: Booking[] = [
-  {
-    id: 'NS-26-PKR-2048',
-    property: 'Pine Hill Homestay',
-    city: 'Pokhara, Kaskikot',
-    image: 'https://images.unsplash.com/photo-1449158743715-0a90ea965ba3?auto=format&fit=crop&w=900&q=85',
-    checkIn: '2026-12-12',
-    checkOut: '2026-12-15',
-    guests: 2,
-    total: 18400,
-    status: 'Confirmed',
-    room: 'Deluxe mountain-view room',
-  },
-  {
-    id: 'NS-26-KTM-1982',
-    property: 'Heritage Courtyard',
-    city: 'Kathmandu, Patan',
-    image: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=900&q=85',
-    checkIn: '2026-08-18',
-    checkOut: '2026-08-20',
-    guests: 1,
-    total: 9600,
-    status: 'Completed',
-    room: 'Courtyard queen room',
-  },
-];
-
 const money = (n: number) => `रु ${n.toLocaleString('en-IN')}`;
 const date = (s: string) =>
   new Date(`${s}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+function mapBooking(record: MarketplaceBooking): Booking {
+  const status = record.bookingStatus === 'confirmed' ? 'Confirmed' : record.bookingStatus === 'completed' ? 'Completed' : 'Cancelled';
+  return {
+    id: record.id,
+    reference: record.bookingReference,
+    property: record.propertyTitle,
+    city: record.propertyCity,
+    image: record.propertyImage,
+    checkIn: record.checkIn,
+    checkOut: record.checkOut,
+    guests: record.guests,
+    total: record.totalAmount,
+    status,
+    room: 'Pay at property',
+  };
+}
 
 function getInitials(name?: string) {
   if (!name) return 'NM';
@@ -167,7 +160,7 @@ function BookingCard({ booking, onCancel }: { booking: Booking; onCancel?: (id: 
       <div className="guest-booking-info">
         <div className="guest-booking-top">
           <span className={`guest-status ${booking.status.toLowerCase()}`}>{booking.status}</span>
-          <span className="guest-booking-id">{booking.id}</span>
+          <span className="guest-booking-id">{booking.reference}</span>
         </div>
         <h3>{booking.property}</h3>
         <p className="guest-location">
@@ -211,167 +204,138 @@ function BookingCard({ booking, onCancel }: { booking: Booking; onCancel?: (id: 
 }
 
 export function GuestTripsPage() {
-  const [bookings, setBookings] = useState<Booking[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('ns-demo-bookings') || 'null') || initialBookings;
-    } catch {
-      return initialBookings;
-    }
-  });
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [tab, setTab] = useState<'Upcoming' | 'Past' | 'Cancelled'>('Upcoming');
 
+  const loadBookings = async () => {
+    setLoading(true);
+    const result = await api.getBookings();
+    if (result.success && result.data) {
+      setBookings(result.data.bookings.map(mapBooking));
+      setError('');
+    } else {
+      setError(result.error || 'Unable to load your reservations.');
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { void loadBookings(); }, []);
+
   const filtered = useMemo(
-    () =>
-      bookings.filter((b) =>
-        tab === 'Upcoming' ? b.status === 'Confirmed' : tab === 'Past' ? b.status === 'Completed' : b.status === 'Cancelled'
-      ),
+    () => bookings.filter((booking) =>
+      tab === 'Upcoming' ? booking.status === 'Confirmed' : tab === 'Past' ? booking.status === 'Completed' : booking.status === 'Cancelled'
+    ),
     [bookings, tab]
   );
 
-  const cancel = (id: string) => {
-    if (!window.confirm('Are you sure you want to cancel this booking? The host will be notified.')) return;
-    const next = bookings.map((b) => (b.id === id ? { ...b, status: 'Cancelled' as const } : b));
-    setBookings(next);
-    localStorage.setItem('ns-demo-bookings', JSON.stringify(next));
+  const cancel = async (id: string) => {
+    if (!window.confirm('Cancel this reservation? The host will be notified.')) return;
+    const result = await api.cancelBooking(id);
+    if (result.success && result.data) {
+      const updated = mapBooking(result.data.booking);
+      setBookings((current) => current.map((booking) => booking.id === id ? updated : booking));
+      setError('');
+    } else {
+      setError(result.error || 'Unable to cancel this reservation.');
+    }
   };
 
   return (
     <GuestShell active="/trips">
-      <Heading
-        eyebrow="YOUR NEPALSTAY"
-        title="Your trips"
-        copy="Every journey, from the next check-in to the memories you brought home."
-      />
+      <Heading eyebrow="YOUR NEPALSTAY" title="Your trips" copy="Every journey, from the next check-in to the memories you brought home." />
       <div className="guest-tabs">
         {(['Upcoming', 'Past', 'Cancelled'] as const).map((t) => (
           <button key={t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>
-            {t}
-            <span>
-              {
-                bookings.filter((b) =>
-                  t === 'Upcoming' ? b.status === 'Confirmed' : t === 'Past' ? b.status === 'Completed' : b.status === 'Cancelled'
-                ).length
-              }
-            </span>
+            {t}<span>{bookings.filter((booking) => t === 'Upcoming' ? booking.status === 'Confirmed' : t === 'Past' ? booking.status === 'Completed' : booking.status === 'Cancelled').length}</span>
           </button>
         ))}
       </div>
-      {filtered.length ? (
+      {error && <div className="host-alert host-alert-error" role="alert">{error}</div>}
+      {loading ? <div className="guest-empty"><p>Loading your reservations…</p></div> : filtered.length ? (
         <div className="guest-booking-list">
-          {filtered.map((b) => (
-            <BookingCard key={b.id} booking={b} onCancel={cancel} />
-          ))}
+          {filtered.map((booking) => <BookingCard key={booking.id} booking={booking} onCancel={cancel} />)}
         </div>
       ) : (
         <div className="guest-empty">
-          <CalendarDays size={26} />
-          <h3>No {tab.toLowerCase()} trips yet</h3>
-          <p>Your stays will appear here once you make a booking.</p>
-          <Link to="/s/pokhara" className="button button-dark">
-            Explore stays
-          </Link>
+          <CalendarDays size={26} /><h3>No {tab.toLowerCase()} trips yet</h3>
+          <p>Your confirmed reservations will appear here.</p>
+          <Link to="/s/pokhara" className="button button-dark">Explore stays</Link>
         </div>
       )}
-      <p className="guest-prototype-note">
-        <Clock3 size={14} /> Official reservations confirmed by NepalStay property hosts.
-      </p>
     </GuestShell>
   );
 }
 
 export function GuestBookingDetailPage() {
   const { bookingId } = useParams();
-  const [cancelled, setCancelled] = useState(false);
-  const allBookings: Booking[] = useMemo(() => {
-    try {
-      const stored = JSON.parse(localStorage.getItem('ns-demo-bookings') || 'null');
-      return Array.isArray(stored) ? stored : initialBookings;
-    } catch {
-      return initialBookings;
-    }
-  }, []);
-  const booking = allBookings.find((b) => b.id === bookingId);
+  const [booking, setBooking] = useState<Booking | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [cancelling, setCancelling] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!bookingId) { setLoading(false); return; }
+    api.getBooking(bookingId).then((result) => {
+      if (cancelled) return;
+      if (result.success && result.data) setBooking(mapBooking(result.data.booking));
+      else setError(result.error || 'Booking not found.');
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [bookingId]);
+
+  const cancel = async () => {
+    if (!booking || !window.confirm('Cancel this reservation? The host will be notified.')) return;
+    setCancelling(true);
+    const result = await api.cancelBooking(booking.id);
+    setCancelling(false);
+    if (result.success && result.data) {
+      setBooking(mapBooking(result.data.booking));
+      setError('');
+    } else {
+      setError(result.error || 'Unable to cancel this reservation.');
+    }
+  };
+
+  if (loading) return <GuestShell active="/trips"><div className="guest-empty"><p>Loading reservation…</p></div></GuestShell>;
   if (!booking) {
-    return (
-      <GuestShell active="/trips">
-        <div className="guest-empty">
-          <h3>Booking not found</h3>
-          <Link to="/trips">Back to my trips</Link>
-        </div>
-      </GuestShell>
-    );
+    return <GuestShell active="/trips"><div className="guest-empty"><h3>Booking not found</h3><p>{error}</p><Link to="/trips">Back to my trips</Link></div></GuestShell>;
   }
 
+  const cancelled = booking.status === 'Cancelled';
   return (
     <GuestShell active="/trips">
-      <Link to="/trips" className="guest-back">
-        ← Back to my trips
-      </Link>
-      <Heading eyebrow="BOOKING DETAILS" title="Your stay, at a glance." copy={`Reservation ${booking.id}`} />
+      <Link to="/trips" className="guest-back">← Back to my trips</Link>
+      <Heading eyebrow="BOOKING DETAILS" title="Your stay, at a glance." copy={`Reservation ${booking.reference}`} />
+      {error && <div className="host-alert host-alert-error" role="alert">{error}</div>}
       <div className="guest-detail-card">
         <img className="guest-detail-image" src={booking.image} alt={booking.property} />
         <div className="guest-detail-content">
-          <span className={`guest-status ${cancelled ? 'cancelled' : booking.status.toLowerCase()}`}>
-            {cancelled ? 'Cancelled' : booking.status}
-          </span>
+          <span className={`guest-status ${booking.status.toLowerCase()}`}>{booking.status}</span>
           <h2>{booking.property}</h2>
-          <p>
-            <MapPin size={15} />
-            {booking.city}
-          </p>
+          <p><MapPin size={15}/>{booking.city}</p>
           <div className="guest-detail-grid">
-            <div>
-              <small>CHECK-IN</small>
-              <strong>{date(booking.checkIn)}</strong>
-              <span>After 2:00 PM</span>
-            </div>
-            <div>
-              <small>CHECK-OUT</small>
-              <strong>{date(booking.checkOut)}</strong>
-              <span>Before 11:00 AM</span>
-            </div>
-            <div>
-              <small>GUESTS</small>
-              <strong>{booking.guests}</strong>
-              <span>Registered guests</span>
-            </div>
-            <div>
-              <small>ROOM</small>
-              <strong>{booking.room}</strong>
-              <span>Accommodation</span>
-            </div>
+            <div><small>CHECK-IN</small><strong>{date(booking.checkIn)}</strong><span>After 2:00 PM</span></div>
+            <div><small>CHECK-OUT</small><strong>{date(booking.checkOut)}</strong><span>Before 11:00 AM</span></div>
+            <div><small>GUESTS</small><strong>{booking.guests}</strong><span>Registered guests</span></div>
+            <div><small>PAYMENT</small><strong>At property</strong><span>Pay the host directly</span></div>
           </div>
         </div>
       </div>
       <div className="guest-detail-lower">
         <section className="guest-summary-card">
           <h3>Price summary</h3>
-          <div>
-            <span>Accommodation</span>
-            <strong>{money(booking.total)}</strong>
-          </div>
-          <div>
-            <span>Service fee</span>
-            <strong>Included in total</strong>
-          </div>
-          <div className="total">
-            <span>Total (NPR)</span>
-            <strong>{money(booking.total)}</strong>
-          </div>
-          <p>All mandatory provincial and local taxes included in total NPR amount.</p>
+          <div><span>Total (NPR)</span><strong>{money(booking.total)}</strong></div>
+          <p>Payment is due directly to the property host at check-in.</p>
         </section>
         <section className="guest-summary-card">
           <h3>Need to make a change?</h3>
-          <p>Free cancellation up to 48 hours prior to check-in. The host will be notified immediately upon cancellation.</p>
-          <button
-            className="button button-outline"
-            disabled={cancelled || booking.status !== 'Confirmed'}
-            onClick={() => {
-              if (window.confirm('Cancel this reservation? The host will be notified.')) setCancelled(true);
-            }}
-          >
-            <XCircle size={15} /> {cancelled ? 'Booking cancelled' : 'Cancel booking'}
+          <p>You can cancel before check-in. The host will be notified when the reservation is cancelled.</p>
+          <button className="button button-outline" disabled={cancelled || booking.status !== 'Confirmed' || cancelling} onClick={() => void cancel()}>
+            <XCircle size={15}/> {cancelling ? 'Cancelling…' : cancelled ? 'Booking cancelled' : 'Cancel booking'}
           </button>
         </section>
       </div>
