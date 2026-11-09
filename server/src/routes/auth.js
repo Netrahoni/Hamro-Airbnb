@@ -86,6 +86,7 @@ router.post('/register', async (req, res) => {
       district,
       wardNumber,
       streetAddress,
+      verificationToken,
     } = req.body;
 
     if (typeof fullName !== 'string' || fullName.trim().length < 2 || fullName.trim().length > 100 || (!email && !phone)) {
@@ -99,6 +100,9 @@ router.post('/register', async (req, res) => {
     const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
     const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
     if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'A valid, verified email address is required.' });
+    if (typeof verificationToken !== 'string' || verificationToken.length < 32) {
+      return res.status(403).json({ success: false, error: 'Verify your email address before creating an account.' });
+    }
     if (cleanPhone && normalizePhone(cleanPhone).length < 10) return res.status(400).json({ success: false, error: 'Enter a valid phone number.' });
 
     // Check if user already exists
@@ -125,6 +129,18 @@ router.post('/register', async (req, res) => {
     // Public registration may create guests or hosts, never administrators.
     if (!['guest', 'owner'].includes(role)) return res.status(400).json({ success: false, error: 'Invalid account type.' });
     const finalRole = role;
+
+    // Consume the verified token atomically so it cannot be reused.
+    const verifiedRecord = await VerificationCode.findOneAndDelete({
+      email: cleanEmail,
+      purpose: 'signup',
+      verificationTokenHash: createHash('sha256').update(verificationToken).digest('hex'),
+      verifiedAt: { $ne: null },
+      expiresAt: { $gt: new Date() },
+    });
+    if (!verifiedRecord) {
+      return res.status(403).json({ success: false, error: 'Email verification has expired or is invalid. Please verify your email again.' });
+    }
 
     const newUser = new User({
       fullName: fullName.trim(),
@@ -492,7 +508,7 @@ router.post('/forgot-password', async (req, res) => {
 
 /**
  * POST /api/auth/send-verification-code
- * Send verification code for new guest sign-up
+ * Send verification code for guest or host sign-up
  */
 router.post('/send-verification-code', async (req, res) => {
   try {
