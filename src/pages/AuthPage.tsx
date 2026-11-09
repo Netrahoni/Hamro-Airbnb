@@ -11,9 +11,6 @@ import {
   AlertCircle,
   ArrowRight,
   ShieldAlert,
-  Lock,
-  Landmark,
-  FileCheck,
   Clock,
   Key,
 } from 'lucide-react';
@@ -200,7 +197,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     setForgotSuccessMsg(null);
 
     if (!forgotIdentifier.trim()) {
-      setForgotError('Please enter your registered email address or mobile phone.');
+      setForgotError('Enter your username or the email address linked to your account.');
       return;
     }
 
