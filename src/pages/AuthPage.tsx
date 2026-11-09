@@ -58,6 +58,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   // Host Registration Multi-Step Wizard States
   const [hostStep, setHostStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [hostData, setHostData] = useState<HostRegisterInput>({
+    username: '',
     fullName: '',
     email: '',
     phone: '+977 98',
@@ -148,7 +149,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     e.preventDefault();
     setError(null);
     if (!guestUsername.trim() || !guestPassword) {
-      setError('Please fill in all required registration fields.');
+      setError('Please enter a username and password.');
       return;
     }
 
@@ -177,7 +178,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     e.preventDefault();
     setError(null);
     if (!hostData.username.trim() || !hostData.password) {
-      setError('Please fill in your primary contact and host security credentials.');
+      setError('Please choose a username and password.');
       return;
     }
     if (!hostData.propertyName.trim() || !hostData.city.trim()) {
@@ -538,7 +539,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
                     placeholder="e.g. Aayush Shrestha"
-                    required
                   />
                 </label>
 
@@ -553,14 +553,8 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                     <input
                       type="email"
                       value={guestEmail}
-                      onChange={(e) => {
-                        setGuestEmail(e.target.value);
-                        setEmailVerificationToken('');
-                        setEmailCodeSent(false);
-                        setEmailVerificationCode('');
-                      }}
+                      onChange={(e) => setGuestEmail(e.target.value)}
                       placeholder="name@gmail.com"
-                      required
                     />
                   </label>
                   <label className="form-label">
@@ -570,7 +564,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                       value={guestPhone}
                       onChange={(e) => setGuestPhone(e.target.value)}
                       placeholder="+977 98XXXXXXXX"
-                      required
                     />
                   </label>
                 </div>
@@ -800,18 +793,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                         <span>Username</span>
                         <input type="text" value={hostData.username} onChange={(e) => setHostData({ ...hostData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '').slice(0, 24) })} placeholder="Choose a host username" minLength={3} maxLength={24} required />
                       </label>
-                      <button type="button" className="button button-outline" disabled={isLoading} onClick={() => sendSignupVerificationCode(hostData.email, hostData.fullName)}>
-                              {isLoading ? 'Sending...' : emailCodeSent ? 'Resend code' : 'Send verification code'}
-                            </button>
-                            {emailCodeSent && (
-                              <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                                <input type="text" inputMode="numeric" maxLength={6} value={emailVerificationCode} onChange={(e) => setEmailVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit code" />
-                                <button type="button" className="button button-dark" disabled={isLoading} onClick={() => verifySignupEmailCode(hostData.email)}>Verify</button>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
                       <button
                         type="button"
                         className="button button-dark"
@@ -819,10 +800,6 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                         onClick={() => {
                           if (!hostData.username.trim()) {
                             setError('Please choose a username before continuing.');
-                            return;
-                          }
-                          if (!emailVerificationToken) {
-                            setError('Verify your email address before continuing.');
                             return;
                           }
                           setError(null);
