@@ -96,7 +96,105 @@ router.post('/register', async (req, res) => {
       $or: [
         { username: cleanUsername },
         ...(cleanEmail ? [{ email: cleanEmail }] : []),
-        ...(cleanPhone ? [{ phone: cleanPhone }, { phone: new RegExp(`${normalizePhone(cleanPhone)}$`)] : []),
+        ...(cleanPhone ? [{ phone: cleanPhone }, { phone: new RegExp(`${normalizePhone(cleanPhone)}import express from 'express';
+import { randomInt, createHash, timingSafeEqual, createHmac } from 'node:crypto';
+import { User } from '../models/User.js';
+import { VerificationCode } from '../models/VerificationCode.js';
+import { requireAuth, generateToken } from '../middleware/auth.js';
+import { sendPasswordResetEmail } from '../services/email.js';
+
+const router = express.Router();
+
+function decodeBase32Secret(secret) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const normalized = String(secret || '').replace(/\s+/g, '').toUpperCase();
+  let bits = 0;
+  let value = 0;
+  const bytes = [];
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character);
+    if (index < 0) return Buffer.alloc(0);
+    value = (value << 5) | index;
+    bits += 5;
+    if (bits >= 8) {
+      bytes.push((value >>> (bits - 8)) & 0xff);
+      bits -= 8;
+    }
+  }
+  return Buffer.from(bytes);
+}
+
+function verifyAdminTotp(code, secret) {
+  if (!/^\d{6}$/.test(String(code || '')) || !secret) return null;
+  const key = decodeBase32Secret(secret);
+  if (!key.length) return false;
+  const counter = Math.floor(Date.now() / 30000);
+  for (let window = -1; window <= 1; window += 1) {
+    const time = Buffer.alloc(8);
+    time.writeBigUInt64BE(BigInt(counter + window));
+    const digest = createHmac('sha1', key).update(time).digest();
+    const offset = digest[digest.length - 1] & 0x0f;
+    const binary = ((digest[offset] & 0x7f) << 24) |
+      ((digest[offset + 1] & 0xff) << 16) |
+      ((digest[offset + 2] & 0xff) << 8) |
+      (digest[offset + 3] & 0xff);
+    const expected = String(binary % 1000000).padStart(6, '0');
+    if (timingSafeEqual(Buffer.from(String(code)), Buffer.from(expected))) return counter + window;
+  }
+  return null;
+}
+
+
+function normalizePhone(str = '') {
+  const digits = str.replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+/**
+ * GET /api/auth/config
+ * Public configuration for frontend
+ */
+router.get('/config', (req, res) => {
+  res.json({
+    success: true,
+    adminGmailConfigured: false,
+  });
+});
+
+/**
+ * POST /api/auth/register
+ * Register a new Guest or Host
+ */
+router.post('/register', async (req, res) => {
+  try {
+    const {
+      username, fullName, email, phone, password, role = 'guest',
+      propertyName, propertyType, city, propertyCity, province, district, wardNumber, streetAddress,
+    } = req.body;
+
+    const cleanUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
+    if (!/^[a-z0-9_]{3,24}$/.test(cleanUsername)) {
+      return res.status(400).json({ success: false, error: 'Username must be 3–24 characters using letters, numbers, or underscores.' });
+    }
+    if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+      return res.status(400).json({ success: false, error: 'Password must be between 8 and 128 characters.' });
+    }
+    if (!['guest', 'owner'].includes(role)) return res.status(400).json({ success: false, error: 'Invalid account type.' });
+
+    const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
+    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ success: false, error: 'Enter a valid email address or leave it blank.' });
+    }
+    if (cleanPhone && normalizePhone(cleanPhone).length < 10) {
+      return res.status(400).json({ success: false, error: 'Enter a valid phone number or leave it blank.' });
+    }
+
+    const duplicate = await User.findOne({
+      $or: [
+        { username: cleanUsername },
+        ...(cleanEmail ? [{ email: cleanEmail }] : []),
+        ) }] : []),
       ],
     });
     if (duplicate) return res.status(409).json({ success: false, error: 'That username, email, or phone number is already in use.' });
