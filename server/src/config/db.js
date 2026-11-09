@@ -7,37 +7,43 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure .env is loaded
+// Load server/.env, then the repository-root .env as a fallback.
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
-// MongoDB Connection URI (prefers environment variable, falls back to Atlas cluster)
-const getMongoUri = () =>
-  process.env.MONGODB_URI ||
-  'mongodb+srv://netramanipkr_db_user:uqaToI5jitufiKy2@cluster0.h4sqozu.mongodb.net/nepalstay?retryWrites=true&w=majority';
+// Never embed database credentials in source code. The application must
+// receive its MongoDB connection string from the deployment environment.
+const getMongoUri = () => {
+  const uri = process.env.MONGODB_URI?.trim();
+  if (!uri) {
+    throw new Error('MONGODB_URI is required. Configure it in server/.env or the deployment environment.');
+  }
+  return uri;
+};
 
 /**
- * Native MongoDB Driver (MongoClient) for any framework
+ * Native MongoDB Driver (retained for existing consumers).
  */
 export const client = new MongoClient(getMongoUri());
 
 export async function connectToMongoDB() {
   try {
     await client.connect();
-    console.log("You successfully connected to MongoDB!");
+    console.log('Native MongoDB client connected.');
     return client;
-  } catch (err) {
-    console.dir(err);
+  } catch (error) {
+    console.error('Native MongoDB connection failed:', error.message);
+    throw error;
   }
 }
 
-// Call this only when your application terminates
+// Call this only when your application terminates.
 export async function disconnectFromMongoDB() {
   await client.close();
 }
 
 /**
- * Connect to MongoDB with Mongoose
+ * Connect to MongoDB with Mongoose.
  */
 export async function connectDB() {
   const uri = getMongoUri();
