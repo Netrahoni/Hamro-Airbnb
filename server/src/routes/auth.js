@@ -328,7 +328,6 @@ router.post('/forgot-password', async (req, res) => {
     const user = await User.findOne({
       $or: [
         { username: cleanIdentifier },
-        { username: cleanIdentifier },
         { email: cleanIdentifier },
         { phone: cleanIdentifier },
         ...(phoneLast10.length >= 10 ? [{ phone: new RegExp(`${phoneLast10}$`) }] : []),
