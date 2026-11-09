@@ -189,12 +189,12 @@ export const api = {
 
   async registerHost(input: HostRegisterInput) {
     const payload = {
+      username: input.username,
       fullName: input.fullName,
       email: input.email,
       phone: input.phone,
       password: input.password,
       role: 'owner',
-      verificationToken,
       propertyName: input.propertyName,
       propertyType: input.propertyType,
       city: input.city,
