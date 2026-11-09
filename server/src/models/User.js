@@ -3,7 +3,17 @@ import bcrypt from 'bcryptjs';
 
 const userSchema = new mongoose.Schema(
   {
-    username: {\n      type: String,\n      required: true,\n      lowercase: true,\n      trim: true,\n      minlength: 3,\n      maxlength: 24,\n      match: /^[a-z0-9_]+$/,\n      unique: true,\n      index: true,\n    },\n    fullName: {
+    username: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      minlength: 3,
+      maxlength: 24,
+      match: /^[a-z0-9_]+$/,
+      unique: true,
+      sparse: true,
+    },
+    fullName: {
       type: String,
       required: [true, 'Full name is required'],
       trim: true,
