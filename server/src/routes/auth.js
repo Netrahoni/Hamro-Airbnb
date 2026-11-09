@@ -72,84 +72,45 @@ router.get('/config', (req, res) => {
 router.post('/register', async (req, res) => {
   try {
     const {
-      fullName,
-      email,
-      phone,
-      password,
-      role = 'guest',
-      // Host details
-      propertyName,
-      propertyType,
-      city,
-      propertyCity,
-      province,
-      district,
-      wardNumber,
-      streetAddress,
-      verificationToken,
+      username, fullName, email, phone, password, role = 'guest',
+      propertyName, propertyType, city, propertyCity, province, district, wardNumber, streetAddress,
     } = req.body;
 
-    if (typeof fullName !== 'string' || fullName.trim().length < 2 || fullName.trim().length > 100 || (!email && !phone)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Full name and at least an email or mobile phone number are required.',
-      });
+    const cleanUsername = typeof username === 'string' ? username.trim().toLowerCase() : '';
+    if (!/^[a-z0-9_]{3,24}$/.test(cleanUsername)) {
+      return res.status(400).json({ success: false, error: 'Username must be 3–24 characters using letters, numbers, or underscores.' });
     }
+    if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+      return res.status(400).json({ success: false, error: 'Password must be between 8 and 128 characters.' });
+    }
+    if (!['guest', 'owner'].includes(role)) return res.status(400).json({ success: false, error: 'Invalid account type.' });
 
-    if (typeof password !== 'string' || password.length < 10 || password.length > 128) return res.status(400).json({ success: false, error: 'Password must be between 10 and 128 characters.' });
     const cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
     const cleanPhone = typeof phone === 'string' ? phone.trim() : '';
-    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return res.status(400).json({ success: false, error: 'A valid, verified email address is required.' });
-    if (typeof verificationToken !== 'string' || verificationToken.length < 32) {
-      return res.status(403).json({ success: false, error: 'Verify your email address before creating an account.' });
+    if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ success: false, error: 'Enter a valid email address or leave it blank.' });
     }
-    if (cleanPhone && normalizePhone(cleanPhone).length < 10) return res.status(400).json({ success: false, error: 'Enter a valid phone number.' });
-
-    // Check if user already exists
-    const queryConditions = [];
-    if (cleanEmail) queryConditions.push({ email: cleanEmail });
-    if (cleanPhone) {
-      queryConditions.push({ phone: cleanPhone });
-      const last10 = normalizePhone(cleanPhone);
-      if (last10) {
-        queryConditions.push({ phone: new RegExp(`${last10}$`) });
-      }
+    if (cleanPhone && normalizePhone(cleanPhone).length < 10) {
+      return res.status(400).json({ success: false, error: 'Enter a valid phone number or leave it blank.' });
     }
 
-    if (queryConditions.length > 0) {
-      const existingUser = await User.findOne({ $or: queryConditions });
-      if (existingUser) {
-        return res.status(400).json({
-          success: false,
-          error: 'An account with this email or mobile phone number already exists.',
-        });
-      }
-    }
-
-    // Public registration may create guests or hosts, never administrators.
-    if (!['guest', 'owner'].includes(role)) return res.status(400).json({ success: false, error: 'Invalid account type.' });
-    const finalRole = role;
-
-    // Consume the verified token atomically so it cannot be reused.
-    const verifiedRecord = await VerificationCode.findOneAndDelete({
-      email: cleanEmail,
-      purpose: 'signup',
-      verificationTokenHash: createHash('sha256').update(verificationToken).digest('hex'),
-      verifiedAt: { $ne: null },
-      expiresAt: { $gt: new Date() },
+    const duplicate = await User.findOne({
+      $or: [
+        { username: cleanUsername },
+        ...(cleanEmail ? [{ email: cleanEmail }] : []),
+        ...(cleanPhone ? [{ phone: cleanPhone }, { phone: new RegExp(`${normalizePhone(cleanPhone)}$`)] : []),
+      ],
     });
-    if (!verifiedRecord) {
-      return res.status(403).json({ success: false, error: 'Email verification has expired or is invalid. Please verify your email again.' });
-    }
+    if (duplicate) return res.status(409).json({ success: false, error: 'That username, email, or phone number is already in use.' });
 
     const newUser = new User({
-      fullName: fullName.trim(),
-      email: cleanEmail,
+      username: cleanUsername,
+      fullName: typeof fullName === 'string' && fullName.trim() ? fullName.trim().slice(0, 100) : cleanUsername,
+      email: cleanEmail || undefined,
       phone: cleanPhone || undefined,
       password,
-      role: finalRole,
+      role,
       authProvider: 'email',
-      // Host fields if registering as host
       propertyName: propertyName || undefined,
       propertyType: propertyType || 'Homestay',
       city: city || propertyCity || 'Pokhara',
@@ -158,63 +119,45 @@ router.post('/register', async (req, res) => {
       district: district || 'Kaski',
       wardNumber: wardNumber || '',
       streetAddress: streetAddress || '',
-      kycStatus: finalRole === 'owner' ? 'pending' : 'none',
+      kycStatus: role === 'owner' ? 'pending' : 'none',
       status: 'active',
-      securityClearance: '',
       twoFactorEnabled: false,
       lastLogin: new Date(),
       lastIp: req.ip || '',
     });
-
     await newUser.save();
     const token = generateToken(newUser);
-
-    return res.status(201).json({
-      success: true,
-      message: 'Account registered successfully.',
-      token,
-      user: newUser.toJSON(),
-    });
+    return res.status(201).json({ success: true, message: 'Account registered successfully.', token, user: newUser.toJSON() });
   } catch (error) {
     console.error('Registration error:', error);
-    return res.status(500).json({
-      success: false,
-      error: error.message || 'Server error occurred during registration.',
-    });
+    if (error?.code === 11000) return res.status(409).json({ success: false, error: 'That username is already taken. Choose another.' });
+    return res.status(500).json({ success: false, error: error.message || 'Server error occurred during registration.' });
   }
 });
 
 /**
  * POST /api/auth/login
- * Standard login via Email or Phone + Password
+ * Guest/host login via Username + Password
  */
 router.post('/login', async (req, res) => {
   try {
-    const { identifier, password, role: expectedRole } = req.body;
+    const { identifier, username, password, role: expectedRole } = req.body;
+    const loginName = typeof username === 'string' ? username : identifier;
 
-    if (typeof identifier !== 'string' || typeof password !== 'string' || !identifier.trim() || !password) {
+    if (typeof loginName !== 'string' || typeof password !== 'string' || !loginName.trim() || !password) {
       return res.status(400).json({
         success: false,
-        error: 'Please provide both identifier (email/phone) and password.',
+        error: 'Please provide both username and password.',
       });
     }
 
-    const cleanIdentifier = identifier.trim().toLowerCase();
-    const phoneLast10 = normalizePhone(cleanIdentifier);
-
-    // Search by email, exact phone, or last 10 digits
-    const user = await User.findOne({
-      $or: [
-        { email: cleanIdentifier },
-        { phone: cleanIdentifier },
-        ...(phoneLast10.length >= 10 ? [{ phone: new RegExp(`${phoneLast10}$`) }] : []),
-      ],
-    });
+    const cleanUsername = loginName.trim().toLowerCase();
+    const user = await User.findOne({ username: cleanUsername });
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        error: 'Invalid email/phone or password.',
+        error: 'Invalid username or password.',
       });
     }
 
