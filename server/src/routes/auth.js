@@ -185,7 +185,7 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    if (expectedRole && user.role !== expectedRole && expectedRole !== 'guest') {
+    if (expectedRole && user.role !== expectedRole) {
       return res.status(403).json({
         success: false,
         error: `This account is registered as a ${user.role}, not an ${expectedRole}. Please switch to the ${user.role} sign-in tab.`,
@@ -328,6 +328,7 @@ router.post('/forgot-password', async (req, res) => {
     const user = await User.findOne({
       $or: [
         { username: cleanIdentifier },
+        { username: cleanIdentifier },
         { email: cleanIdentifier },
         { phone: cleanIdentifier },
         ...(phoneLast10.length >= 10 ? [{ phone: new RegExp(`${phoneLast10}$`) }] : []),
@@ -394,6 +395,7 @@ router.post('/reset-password', async (req, res) => {
 
     const user = await User.findOne({
       $or: [
+        { username: cleanIdentifier },
         { username: cleanIdentifier },
         { email: cleanIdentifier },
         { phone: cleanIdentifier },
