@@ -11,7 +11,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SERVICE_FEE_RATE = 0.05;
 
 function validStayDate(value) {
-  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return false;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
@@ -72,7 +72,7 @@ router.post('/', requireAuth, async (req, res) => {
     if (!Number.isInteger(nights) || nights < 1 || nights > 365) return res.status(400).json({ success: false, error: 'Reservations can be between 1 and 365 nights.' });
     const guestCount = Number(guests);
     if (!Number.isInteger(guestCount) || guestCount < 1) return res.status(400).json({ success: false, error: 'Enter a valid guest count.' });
-    if (typeof guestPhone !== 'string' || guestPhone.replace(/\\D/g, '').length < 10 || guestPhone.length > 32) {
+    if (typeof guestPhone !== 'string' || guestPhone.replace(/\D/g, '').length < 10 || guestPhone.length > 32) {
       return res.status(400).json({ success: false, error: 'Enter a valid contact phone number.' });
     }
     if (typeof specialRequests !== 'string' || specialRequests.length > 1000) return res.status(400).json({ success: false, error: 'Special requests must be 1,000 characters or fewer.' });
