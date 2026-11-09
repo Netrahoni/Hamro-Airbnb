@@ -53,7 +53,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
   const [guestUsername, setGuestUsername] = useState('');
   const [guestName, setGuestName] = useState('');
   const [guestEmail, setGuestEmail] = useState('');
-  const [guestPhone, setGuestPhone] = useState('+977 98');
+  const [guestPhone, setGuestPhone] = useState('');
   const [guestPassword, setGuestPassword] = useState('');
   // Host Registration Multi-Step Wizard States
   const [hostStep, setHostStep] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -61,7 +61,7 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
     username: '',
     fullName: '',
     email: '',
-    phone: '+977 98',
+    phone: '',
     password: '',
     citizenshipNumber: '',
     propertyName: '',
@@ -756,13 +756,12 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                   {hostStep === 1 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       <label className="form-label">
-                        <span>Host Full Legal Name</span>
+                        <span>Full Name (optional)</span>
                         <input
                           type="text"
                           value={hostData.fullName}
                           onChange={(e) => setHostData({ ...hostData, fullName: e.target.value })}
                           placeholder="Your Full Name"
-                          required
                         />
                       </label>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -775,17 +774,15 @@ export default function AuthPage({ initialSignup = false }: AuthPageProps) {
                               setHostData({ ...hostData, email: e.target.value });
                             }}
                             placeholder="yourstay@gmail.com"
-                            required
                           />
                         </label>
                         <label className="form-label">
-                          <span>Mobile Phone (+977)</span>
+                          <span>Mobile Phone (optional)</span>
                           <input
                             type="tel"
                             value={hostData.phone}
                             onChange={(e) => setHostData({ ...hostData, phone: e.target.value })}
                             placeholder="+977 98XXXXXXXX"
-                            required
                           />
                         </label>
                       </div>
