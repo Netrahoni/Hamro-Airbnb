@@ -149,7 +149,6 @@ export const api = {
       district: input.district,
       wardNumber: input.wardNumber,
       streetAddress: input.streetAddress,
-      emailVerificationToken: input.emailVerificationToken,
     };
 
     const res = await request<{ user: User; token: string }>('/api/auth/register', {
@@ -191,20 +190,6 @@ export const api = {
     });
   },
 
-
-  async verifyEmailCode(email: string, code: string) {
-    return request<{ verificationToken: string }>('/api/auth/verify-email-code', {
-      method: 'POST',
-      body: JSON.stringify({ email, code }),
-    });
-  },
-
-  async sendVerificationCode(data: { email?: string; phone?: string; fullName?: string }) {
-    return request<{ code: string; emailSent: boolean; message: string }>('/api/auth/send-verification-code', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
 
   async resetPassword(identifier: string, code: string, newPassword: string) {
     return request<{ message: string }>('/api/auth/reset-password', {
