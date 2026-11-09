@@ -40,21 +40,22 @@ export interface User {
 }
 
 export interface RegisterInput {
-  fullName: string;
-  email: string;
-  phone: string;
+  username: string;
+  fullName?: string;
+  email?: string;
+  phone?: string;
   password: string;
   role: UserRole;
-  verificationToken: string;
   propertyName?: string;
   propertyCity?: string;
   propertyType?: string;
 }
 
 export interface HostRegisterInput {
+  username: string;
   fullName: string;
-  email: string;
-  phone: string;
+  email?: string;
+  phone?: string;
   password: string;
   citizenshipNumber: string;
   propertyName: string;
